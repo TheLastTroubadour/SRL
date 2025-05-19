@@ -15,13 +15,14 @@ end
 local function follow_event(line, chatSender)
     Logging.Debug("Movement.follow_event Start")
     local me = mq.TLO.Me
-    local spawnName = "pc =" .. tostring(chatSender)
+    local spawnName = "pc =" .. chatSender
     local followId = mq.TLO.Spawn(spawnName).ID()
     Logging.Debug("Follow Id -> " .. tostring(followId))
     if (me.ID() == followId) then
         --Don't follow the person who called for it
         return
     else
+        --Check Zone|Distance
         follow(followId)
         --Set follow on ? Stop casting? Check for invis?
     end
@@ -36,13 +37,13 @@ local function stop_event(line, chatSender)
         --Person who called for it doesn't need to stop
         return
     else
-        FOLLOWING = false
-        FOLLOW_TARGET_ID = nil
         movement_export.call_stop()
     end
 end
 
 function movement_export.call_stop()
+    FOLLOWING = false
+    FOLLOW_TARGET_ID = nil
     mq.cmd("/stick off");
 end
 

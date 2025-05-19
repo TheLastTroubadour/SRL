@@ -18,7 +18,16 @@ end
 
 local function getHealingFromIni()
     Logging.Debug("Setup.getHealingFromIni Start")
+    --tanks
+    local importantBotValues = IniHelper.readKey(IniHelper.HEALING_SECTION, IniHelper.IMPORTANT_BOT_KEY)
+    local tankList = IniHelper.readKey(IniHelper.HEALING_SECTION, IniHelper.TANK_KEY)
+    local tankHeal = IniHelper.readKey(IniHelper.HEALING_SECTION, IniHelper.TANK_HEAL_KEY)
+    local importantBotHealValues = IniHelper.readKey(IniHelper.HEALING_SECTION, IniHelper.IMPORTANT_HEAL_KEY)
 
+    HEALING_2D[IniHelper.TANK_KEY] = tankList
+    HEALING_2D[IniHelper.IMPORTANT_BOT_KEY] = importantBotValues
+    HEALING_2D[IniHelper.TANK_HEAL_KEY] = tankHeal
+    HEALING_2D[IniHelper.IMPORTANT_HEAL_KEY] = importantBotHealValues
 
     Logging.Debug("Setup.getHealingFromIni End")
 end

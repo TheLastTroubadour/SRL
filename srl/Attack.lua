@@ -1,4 +1,5 @@
 -- All things attack related
+local CastUtil = require 'srl/util/CastUtil'
 
 local attack_export = {}
 
@@ -58,24 +59,7 @@ local function check_abilities()
     Logging.Debug("Attack.check_abilities End")
 end
 
-local function checkIfCastingIsReady(spell)
-    Logging.Debug("Attack.checkIfCastingIsReady Start")
 
-    Logging.Debug("checks Spell -- " ..tostring(spell==nil) .. "--- Casting " ..tostring(mq.TLO.Me.Casting() == true));
-    Logging.Debug("Ready ---" .. tostring(mq.TLO.Cast.Ready(spell)() == false))
-    if(spell == nil) then return false end
-
-    if(mq.TLO.Me.Casting() == true) then
-        return false
-    end
-
-    if(mq.TLO.Cast.Ready(spell)() == false) then
-        return false
-    end
-
-    Logging.Debug("Attack.checkIfCastingIsReady End")
-    return true
-end
 
 local function check_nukes()
 
@@ -87,19 +71,11 @@ local function check_nukes()
     --different nuke sets
 
     local currentSpellSet = NUKES_2D["Main"]
-    print(TableUtil.table_print(currentSpellSet))
     for k,v in ipairs(currentSpellSet) do
         local splits = StringUtil.split(tostring(v), "/")
-        print(TableUtil.table_print(splits))
         local spellName = tostring(splits[1])
         local gem = tostring(splits[2]):gsub("|", "")
-        local isSpellReady = checkIfCastingIsReady(spellName)
-        if(isSpellReady == true) then
-            --param gems
-            mq.cmdf("/bc Casting " .. spellName)
-            mq.cmdf("/casting \"%s\"|%s", spellName, gem)
-            return
-        end
+        CastUtil.srl_cast(spellName, gem, CURRENT_ASSIST_ID)
     end
     Logging.Debug("Attack.check_nukes End")
 end

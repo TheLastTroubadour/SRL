@@ -1,5 +1,6 @@
 --Macro Created to be full bot scenario for all classes in EQ
 mq = require "mq";
+local Heal = require 'srl/Heal'
 Attack = require 'srl/Attack'
 Init = require "srl/Setup";
 Movement = require 'srl/Movement'
@@ -18,6 +19,7 @@ local function mainLoop()
         Logging.Debug("Main While loop Start")
         mq.doevents();
         --each class is going to be different going to need to abstract eventually
+        Heal.check_healing()
         Movement.check_follow()
         Attack.check_assist()
         Buff.check_buff()

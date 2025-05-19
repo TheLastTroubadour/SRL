@@ -33,6 +33,13 @@ inihelper_export.MELEE_ABILITIES_SECTION = 'Melee_Abilities'
 inihelper_export.MELEE_ABILITY_KEY = 'Ability'
 --Nukes
 inihelper_export.NUKES_SECTION = "Nukes"
+--Buffs
+--Healing
+inihelper_export.HEALING_SECTION ='Heals'
+inihelper_export.TANK_KEY = 'Tank'
+inihelper_export.IMPORTANT_BOT_KEY='Important Bot'
+inihelper_export.TANK_HEAL_KEY='Tank Heal'
+inihelper_export.IMPORTANT_HEAL_KEY = 'Important Heal'
 
 
 local function writeToIni(location, section, key, keyvalue)
@@ -84,17 +91,16 @@ end
 function inihelper_export.readSection(section)
     Logging.Debug("BaseIni.readSection Start")
     local keys = {}
-    local keyCount = mq.TLO.Ini.File(botIniLocation).Section(section).Count()
+    local keyCount = mq.TLO.Ini.File(botIniLocation).Section(section).Key.Count()
     for i=1, keyCount do
-        local spellSet = mq.TLO.Ini.File(botIniLocation).Section(section).Key.KeyAtIndex(i)
+        local spellSet = mq.TLO.Ini.File(botIniLocation).Section(section).Key.KeyAtIndex(i)()
         --add them to data structure but do not dup keys
-        spellSetName = tostring(spellSet)
-        Logging.Debug('KeyName' .. tostring(keyName) .. " Value ---" .. spellSetName)
-        local values = inihelper_export.readKey(section, spellSetName);
-        Logging.Debug("Values from " .. spellSetName)
+        Logging.Debug(" Key ---" .. spellSet)
+        local values = inihelper_export.readKey(section, spellSet);
+        Logging.Debug("Values from " .. spellSet)
         Logging.Debug(TableUtil.table_print(values))
 
-        keys[spellSetName] = values
+        keys[spellSet] = values
     end
     return keys
 end
@@ -105,11 +111,10 @@ function inihelper_export.readKey(section, key)
     local count = mq.TLO.Ini.File(botIniLocation).Section(section).Key(key).Count()
     --Make sure they have it before loading it?
     for i=1,count do
-        local abilityName = mq.TLO.Ini.File(botIniLocation).Section(section).Key(key).ValueAtIndex(i);
-        local abilityNameText = tostring(abilityName)
-        if(abilityNameText ~= '' and abilityNameText ~= nil) then
-            Logging.Debug("Inserting -------" .. abilityNameText .. "------ At position " .. i)
-            table.insert(keysToArray, abilityNameText)
+        local abilityName = mq.TLO.Ini.File(botIniLocation).Section(section).Key(key).ValueAtIndex(i)();
+        if(abilityName ~= '' and abilityName~= nil) then
+            Logging.Debug("Inserting -------" .. abilityName.. "------ At position " .. i)
+            table.insert(keysToArray, abilityName)
         end
     end
     Logging.Debug("BaseIni.readKey End")

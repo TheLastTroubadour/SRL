@@ -1,4 +1,3 @@
-
 stringutil_export = {}
 
 function stringutil_export.split(inputstr, sep)
