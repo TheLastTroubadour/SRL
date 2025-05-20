@@ -1,4 +1,5 @@
 local setup_export = {}
+local Heal = require 'srl/Heal'
 
 local function initializeGlobalVars()
     ASSISTING = false
@@ -9,11 +10,28 @@ local function initializeGlobalVars()
     MELEE_ABILITIES_2D = {}
     NUKES_2D = {}
     HEALING_2D = {}
+    BUFFS_2D = {}
     --ini driven
     ASSIST_TYPE = IniHelper.returnValueFromSectionAndKey(IniHelper.ASSIST_SECTION_KEY, IniHelper.ASSIST_TYPE_KEY)
     MELEE_STICK_POINT = IniHelper.DEFAULT_MELEE_STICK_POINT_VALUE
     MELEE_DISTANCE = IniHelper.returnValueFromSectionAndKey(IniHelper.ASSIST_SECTION_KEY, IniHelper.MELEE_DISTANCE_KEY)
     RANGED_DISTANCE = IniHelper.returnValueFromSectionAndKey(IniHelper.ASSIST_SECTION_KEY, IniHelper.RANGED_DISTANCE_KEY)
+end
+
+local function getBuffInformationFromIni()
+    Logging.Debug("Setup.getBuffInformationFromIni Start")
+
+    local instantBuffValues = IniHelper.readKey(IniHelper.BUFF_SECTION_KEY, IniHelper.INSTANT_BUFF_KEY)
+    local selfBuffValues = IniHelper.readKey(IniHelper.BUFF_SECTION_KEY, IniHelper.SELF_BUFF_KEY)
+    local botBuffValues = IniHelper.readKey(IniHelper.BUFF_SECTION_KEY, IniHelper.BOT_BUFF_KEY)
+    local combatBuffValues = IniHelper.readKey(IniHelper.BUFF_SECTION_KEY, IniHelper.COMBAT_BUFF_KEY)
+
+    BUFFS_2D[IniHelper.INSTANT_BUFF_KEY] = instantBuffValues;
+    BUFFS_2D[IniHelper.SELF_BUFF_KEY] = selfBuffValues;
+    BUFFS_2D[IniHelper.BOT_BUFF_KEY] = botBuffValues;
+    BUFFS_2D[IniHelper.COMBAT_BUFF_KEY] = combatBuffValues;
+
+    Logging.Debug("Setup.getBuffInformationFromIni End")
 end
 
 local function getHealingFromIni()
@@ -61,6 +79,9 @@ function setup_export.setup()
     IniHelper.createBotIni()
     initializeGlobalVars()
 
+    Heal.createObservables()
+
+    getBuffInformationFromIni()
     getHealingFromIni()
     getMeleeAbilitiesFromIni()
     getNukeSetsFromIni()

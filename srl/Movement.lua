@@ -7,7 +7,11 @@ local function follow(followId)
     FOLLOWING = true;
     FOLLOW_TARGET_ID = followId;
     Target.get_target_by_id(followId)
-    mq.cmd("/stick 20");
+    mq.cmd("/stick off")
+    mq.cmd("/nav off")
+    mq.cmd("/afollow off")
+
+    mq.cmd("/stick 5");
     Logging.Debug("Movement.follow End")
 end
 

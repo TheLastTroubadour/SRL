@@ -4,6 +4,7 @@ local CastUtil = require 'srl/util/CastUtil'
 local attack_export = {}
 
 local function assist_event(line, chatSender, targetId)
+    Logging.Debug("Attack.assist_event Start")
     local spawnName = "pc =" .. tostring(chatSender)
     local chatSenderId = mq.TLO.Spawn(spawnName).ID()
     local me = mq.TLO.Me
@@ -29,6 +30,8 @@ local function assist_event(line, chatSender, targetId)
             --TODO
         end
     end
+    print(ASSISTING)
+    Logging.Debug("Attack.assist_event End")
 end
 
 local function checkIfAbilityReady(abilityName)
@@ -72,6 +75,7 @@ local function check_nukes()
 
     local currentSpellSet = NUKES_2D["Main"]
     for k,v in ipairs(currentSpellSet) do
+        print("Check nukes")
         local splits = StringUtil.split(tostring(v), "/")
         local spellName = tostring(splits[1])
         local gem = tostring(splits[2]):gsub("|", "")

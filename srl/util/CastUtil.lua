@@ -15,20 +15,23 @@ local function checkIfCastingIsReady(spell)
         return false
     end
 
+    Logging.Debug("Returning True")
     Logging.Debug("Attack.checkIfCastingIsReady End")
     return true
 end
 
 function cast_util_export.srl_cast(spellName, gem, spellTarget)
+    Logging.Debug("Cast Util Export SRL Cast Start")
     local isSpellReady = checkIfCastingIsReady(spellName)
+    Logging.Debug(("Is spell ready %s --- %s "):format(spellName, isSpellReady))
     if(isSpellReady == true) then
-        print(("Spell name %s Gem %s Target %s"):format(spellName, gem, spellTarget))
         Target.get_target_by_id(spellTarget)
         --param gems
         mq.cmdf("/bc Casting " .. spellName)
         mq.cmdf("/casting \"%s\"|%s", spellName, gem)
         return
     end
+    Logging.Debug("Cast Util Export SRL Cast End")
 end
 
 return cast_util_export
