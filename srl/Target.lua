@@ -1,3 +1,4 @@
+local mq = require 'mq'
 local target_export = {}
 
 function target_export.get_target_by_id(targetId)

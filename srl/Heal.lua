@@ -1,5 +1,6 @@
 local Dannet = require 'srl/DanNet'
 local CastUtil = require 'srl/util/CastUtil'
+local iniHelper = require 'srl/ini/BaseIni'
 
 local healing_export = {}
 local CURRENT_HPS_QUERY = 'Me.PctHPs'
@@ -10,8 +11,11 @@ local function healListWithTankHealingInformation(healList, healingInformation)
         if(#healList> 0) then
             for _, i in ipairs(healList) do
                 local tankHealth = Dannet.read_observer(i, CURRENT_HPS_QUERY, 40)()
+                if(tankHealth ~= nil) then
+
+                end
                 print(tankHealth .. i)
-                local tankHealInformation = HEALING_2D[IniHelper.TANK_HEAL_KEY]
+                local tankHealInformation = HEALING_2D[iniHelper.TANK_HEAL_KEY]
                 --This will never change probably will put it on object at creation
                 for _, j in ipairs(tankHealInformation) do
                     local splits = StringUtil.split(j, "/")
@@ -35,9 +39,9 @@ local function healListWithTankHealingInformation(healList, healingInformation)
 end
 
 function healing_export.createObservables()
-    local tankList = HEALING_2D[IniHelper.TANK_KEY]
+    local tankList = HEALING_2D[iniHelper.TANK_KEY]
     local list1 = tankList
-    local list2 = HEALING_2D[IniHelper.IMPORTANT_BOT_KEY]
+    local list2 = HEALING_2D[iniHelper.IMPORTANT_BOT_KEY]
     if(list1 ~= nil and #list1 > 0) then
         for _, i in ipairs(list1) do
             Dannet.create_observer(i, CURRENT_HPS_QUERY, 40)
@@ -55,10 +59,10 @@ end
 
 function healing_export.check_healing()
 
-    local tankList = HEALING_2D[IniHelper.TANK_KEY]
-    local tankHealInformation = HEALING_2D[IniHelper.TANK_HEAL_KEY]
-    local importantBotList = HEALING_2D[IniHelper.IMPORTANT_BOT_KEY]
-    local importantBotHealInformation = HEALING_2D[IniHelper.IMPORTANT_BOT_KEY]
+    local tankList = HEALING_2D[iniHelper.TANK_KEY]
+    local tankHealInformation = HEALING_2D[iniHelper.TANK_HEAL_KEY]
+    local importantBotList = HEALING_2D[iniHelper.IMPORTANT_BOT_KEY]
+    local importantBotHealInformation = HEALING_2D[iniHelper.IMPORTANT_BOT_KEY]
 
     healListWithTankHealingInformation(tankList, tankHealInformation)
     healListWithTankHealingInformation(importantBotList, importantBotHealInformation)

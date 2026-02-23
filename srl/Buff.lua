@@ -1,7 +1,8 @@
 local mq = require 'mq'
 local Logging = require 'Write'
 local CastUtil = require 'srl/util/CastUtil'
-local DanNet = require 'srl/DanNet'
+local StringUtil = require 'srl/Util/StringUtil'
+local iniHelper = require "srl/ini/BaseIni"
 buff_export = {}
 
 local function castSelfBuffs(selfBuffs)
@@ -13,12 +14,9 @@ local function castSelfBuffs(selfBuffs)
                 local splits = StringUtil.split(i, "/")
                 local spellToCastName = splits[1]
 
-                local characterToBuff = mq.TLO.Me.CleanName()
                 local characterToBuffId = mq.TLO.Me.ID()
 
-                local query = ('Me.Buff[%s].Duration.TotalSeconds'):format(spellToCastName)
-                DanNet.create_observer(characterToBuff, query, 40)
-                local duration = DanNet.read_observer(characterToBuff, query, 40)
+                local duration = mq.TLO.Me.Buff(spellToCastName).Duration()
 
                 if(duration == 'NULL') then
                     duration = 0
@@ -34,11 +32,11 @@ local function castSelfBuffs(selfBuffs)
     end
 end
 
-local function castBotBuffs(selfBuffs)
+local function castBotBuffs(botBuffs)
     if(ASSISTING == true) then return end
-    if(selfBuffs ~= nil) then
-        if(#selfBuffs > 0) then
-            for _, i in ipairs(selfBuffs) do
+    if(botBuffs ~= nil) then
+        if(#botBuffs > 0) then
+            for _, i in ipairs(botBuffs) do
                 --This will never change probably will put it on object at creation
                 local splits = StringUtil.split(i, "/")
                 local spellToCastName = splits[1]
@@ -47,9 +45,10 @@ local function castBotBuffs(selfBuffs)
                 local characterToBuffId = mq.TLO.NetBots(characterToBuff).ID()
 
 
-                local query = ('Me.Buff[%s].Duration.TotalSeconds'):format(spellToCastName)
-                DanNet.create_observer(characterToBuff, query, 40)
-                local duration = DanNet.read_observer(characterToBuff, query, 40)
+
+                CONTROLLER:checkBuff(spellToCastName, characterToBuff)
+                --[[
+                local duration = data.duration
 
                 if(duration == 'NULL') then
                     duration = 0
@@ -60,6 +59,7 @@ local function castBotBuffs(selfBuffs)
                     local gemNumber = StringUtil.getValueByName(i, "/Gem")
                     CastUtil.srl_cast(spellToCastName, gemNumber, characterToBuffId)
                 end
+                --]]
             end
         end
     end
@@ -67,9 +67,9 @@ end
 
 function buff_export.check_buff()
     --self buffs
-    local selfBuffs = BUFFS_2D[IniHelper.SELF_BUFF_KEY]
+    local selfBuffs = BUFFS_2D[iniHelper.SELF_BUFF_KEY]
     --bot buffs
-    local botBuffs = BUFFS_2D[IniHelper.BOT_BUFF_KEY]
+    local botBuffs = BUFFS_2D[iniHelper.BOT_BUFF_KEY]
     --combat buffs
 
     Logging.loglevel = 'debug'

@@ -1,3 +1,5 @@
+local mq = require 'mq'
+local Logging = require 'Write'
 -- All things attack related
 local CastUtil = require 'srl/util/CastUtil'
 
@@ -7,7 +9,7 @@ local function assist_event(line, chatSender, targetId)
     Logging.Debug("Attack.assist_event Start")
     local spawnName = "pc =" .. tostring(chatSender)
     local chatSenderId = mq.TLO.Spawn(spawnName).ID()
-    local me = mq.TLO.Me
+    local me = mq.TLO.Me()
     ASSISTING = true
     if(me.ID() == chatSenderId) then
         --don't do anything if person that issued it
@@ -30,7 +32,7 @@ local function assist_event(line, chatSender, targetId)
             --TODO
         end
     end
-    print(ASSISTING)
+    print('ASSISTING', ASSISTING)
     Logging.Debug("Attack.assist_event End")
 end
 

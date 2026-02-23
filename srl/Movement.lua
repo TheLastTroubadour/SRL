@@ -1,26 +1,28 @@
+local mq = require 'mq'
+local target = require 'srl/target'
+local Logging = require 'Write'
 --All Movements related functionality
 local movement_export = {}
 
 --Actual Follow Functionality
 local function follow(followId)
+    --Use Switch or AdvFollow make a service?
     Logging.Debug("Movement.follow Start")
     FOLLOWING = true;
     FOLLOW_TARGET_ID = followId;
-    Target.get_target_by_id(followId)
     mq.cmd("/stick off")
-    mq.cmd("/nav off")
     mq.cmd("/afollow off")
-
-    mq.cmd("/stick 5");
+    target.get_target_by_id(followId)
+    mq.cmd("/afollow on")
     Logging.Debug("Movement.follow End")
 end
 
 --Handles the Events based off chat
-local function follow_event(line, chatSender)
+local function follow_event(line, chatSender, args)
     Logging.Debug("Movement.follow_event Start")
     local me = mq.TLO.Me
-    local spawnName = "pc =" .. chatSender
-    local followId = mq.TLO.Spawn(spawnName).ID()
+    local spawnId = "pc " .. chatSender
+    local followId = mq.TLO.Spawn(spawnId).ID()
     Logging.Debug("Follow Id -> " .. tostring(followId))
     if (me.ID() == followId) then
         --Don't follow the person who called for it
@@ -34,7 +36,7 @@ local function follow_event(line, chatSender)
 end
 
 local function stop_event(line, chatSender)
-    local spawnName = "pc =" .. tostring(chatSender)
+    local spawnName = "pc " .. tostring(chatSender)
     local stopId = mq.TLO.Spawn(spawnName).ID()
     local me = mq.TLO.Me
     if (me.ID() == stopId) then
@@ -49,6 +51,7 @@ function movement_export.call_stop()
     FOLLOWING = false
     FOLLOW_TARGET_ID = nil
     mq.cmd("/stick off");
+    mq.cmd("/afollow off")
 end
 
 function movement_export.check_follow()
@@ -66,11 +69,11 @@ function movement_export.check_follow()
 end
 
 function movement_export.registerEvents()
-    mq.event('follow1', '[#1#] Follow Me', follow_event);
-    mq.event('follow2', '<#1#> Follow Me', follow_event);
-    --mq.event('follow3', '#*# Follow Me', follow_event);
+    mq.event('follow1', 'Follow Me #1#', follow_event);
+    mq.event('follow2', '#*# Follow Me #1#', follow_event);
+    --mq.event('follow3', '<#*#> Follow Me #1#', follow_event);
     mq.event('stop1', '[#1#] Stop', stop_event)
-    mq.event('stop2', '<#1#> Stop', stop_event)
+    mq.event('stop2', 'Stop', stop_event)
 end
 
 return movement_export

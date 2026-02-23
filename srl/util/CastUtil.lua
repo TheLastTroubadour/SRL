@@ -1,3 +1,8 @@
+
+local mq = require 'mq'
+local Logging = require 'write'
+local target = require 'srl/Target'
+
 cast_util_export = {}
 
 local function checkIfCastingIsReady(spell)
@@ -25,7 +30,7 @@ function cast_util_export.srl_cast(spellName, gem, spellTarget)
     local isSpellReady = checkIfCastingIsReady(spellName)
     Logging.Debug(("Is spell ready %s --- %s "):format(spellName, isSpellReady))
     if(isSpellReady == true) then
-        Target.get_target_by_id(spellTarget)
+        target.get_target_by_id(spellTarget)
         --param gems
         mq.cmdf("/bc Casting " .. spellName)
         mq.cmdf("/casting \"%s\"|%s", spellName, gem)
