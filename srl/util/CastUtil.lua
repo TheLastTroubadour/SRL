@@ -32,8 +32,12 @@ function cast_util_export.srl_cast(spellName, gem, spellTarget)
     if(isSpellReady == true) then
         target.get_target_by_id(spellTarget)
         --param gems
-        mq.cmdf("/echo Casting " .. spellName)
+        local castTime = mq.TLO.Spell(spellName).CastTime.TotalSeconds() * 1000
+        mq.cmdf("/dgae /echo Casting " .. spellName .. " on " .. spellTarget)
         mq.cmdf("/casting \"%s\"|%s", spellName, gem)
+        print("Before Delay")
+        mq.delay(castTime)
+        print("After Delay")
         return
     end
     Logging.Debug("Cast Util Export SRL Cast End")

@@ -44,4 +44,46 @@ function Promise:isExpired()
             and (mq.gettime() - self.start) > self.timeout
 end
 
+function Promise.all(promises)
+
+    local combined = Promise:new()
+    local total = #promises
+    local remaining = total
+    local results = {}
+
+    if total == 0 then
+        combined:resolve(results)
+        return combined
+    end
+
+    for index, promise in ipairs(promises) do
+
+        promise:next(function(value)
+
+            results[index] = value
+            remaining = remaining - 1
+
+            if remaining == 0 then
+                combined:resolve(results)
+            end
+
+        end)
+
+        promise:catch(function(err)
+
+            -- Treat rejection as nil result
+            results[index] = nil
+            remaining = remaining - 1
+
+            if remaining == 0 then
+                combined:resolve(results)
+            end
+
+        end)
+
+    end
+
+    return combined
+end
+
 return Promise

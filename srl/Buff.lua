@@ -16,15 +16,14 @@ local function castSelfBuffs(selfBuffs)
 
                 local characterToBuffId = mq.TLO.Me.ID()
 
-                local duration = mq.TLO.Me.Buff(spellToCastName).Duration()
+                local duration = mq.TLO.Me.Buff(spellToCastName).Duration.TotalSeconds()
 
-                if(duration == 'NULL') then
+                if(duration == nil) then
                     duration = 0
                 end
                 --In ticks
                 if(tonumber(duration) < 30) then
                     local gemNumber = StringUtil.getValueByName(i, "/Gem")
-                    print(("Spell to cast name: %s Gem Number %s Character to Buff %s"):format(spellToCastName, gemNumber, characterToBuffId))
                     CastUtil.srl_cast(spellToCastName, gemNumber, characterToBuffId)
                 end
             end
@@ -36,16 +35,36 @@ local function castBotBuffs(botBuffs)
     if(ASSISTING == true) then return end
     if(botBuffs ~= nil) then
         if(#botBuffs > 0) then
+            local promises = {}
             for _, i in ipairs(botBuffs) do
-                --This will never change probably will put it on object at creation
                 local splits = StringUtil.split(i, "/")
                 local spellToCastName = splits[1]
-
                 local characterToBuff = splits[2]
-                print("Trying to Buff ", characterToBuff, ' with ', spellToCastName)
-
-                CONTROLLER:checkBuff(spellToCastName, characterToBuff, i)
+                table.insert(promises, buffService:poll(characterToBuff, spellToCastName, i))
             end
+
+            local replies = Promise.all(promises):await()
+
+            for i, reply in ipairs(replies) do
+                if reply.data.hasBuff then
+                end
+
+                -- Refresh 60 seconds before expiration
+                local refreshWindow = 60
+
+                local nextTime = now + ((reply.data.duration - refreshWindow) * 1000)
+
+                if reply.data.duration <= refreshWindow then
+                    self:enqueue(target, spell, iniSpellLine)
+                else
+                    self.nextCheck[k] = nextTime
+                end
+
+            end
+
+        else
+            -- No buff → cast immediately
+            self:enqueue(target, spell, iniSpellLine)
         end
     end
 end

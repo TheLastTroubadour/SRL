@@ -10,7 +10,6 @@ function stringutil_export.getValueByName(inputstr, value)
     --Need to find if there is another / if not we can assume this is the end
     local stringLength = string.len(value)
     local con = string.sub(inputstr, i + 1, -1)
-    print("Con " .. con)
     k = string.find(con, "/")
     if(k == nil) then
         k = string.len(con)

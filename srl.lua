@@ -20,8 +20,16 @@ local function mainLoop()
         movement.check_follow()
         attack.check_assist()
         buff.check_buff()
+
+        --order matters
+        --Process network replies and resolve promises
         BUS:update()
+
+        --resume any coroutines waiting on await
         scheduler:run()
+
+        --service logic
+        buffService:update()
         mq.delay(10)
 
         Logging.Debug("Main While loop End")

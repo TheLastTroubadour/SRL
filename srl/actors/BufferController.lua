@@ -32,38 +32,16 @@ end
 
 function BufferController:checkBuff(spell, targetName, spellData)
 
-    Srl.scheduler.spawn(function()
         local reply =self.bus:request(targetName, 'buff_status_request', {
             spell = spell
         }):await()
-
         self:evaluate(reply, spellData)
-
-    end)
 end
 
 function BufferController:evaluate(reply, spellData)
     self:castBuff(reply, spellData)
 end
 
-function BufferController:castBuff(reply, spellData)
-    if mq.gettime() - self.lastCast < self.castThrottle then return end
-    local duration = reply.data.duration
-    local characterToBuffId = reply.data.characterId
-    local spellToCastName = reply.data.spellName
-
-    --In ticks
-    if(tonumber(duration) < 30) then
-        local gemNumber = StringUtil.getValueByName(spellData, "/Gem")
-        CastUtil.srl_cast(spellToCastName, gemNumber, characterToBuffId)
-    end
-
-    if not mq.TLO.Me.SpellReady(spell)() then return end
-    --Queue?
-    CastUtil.srl_cast(spellName, gem, target)
-
-    self.lastCast = mq.gettime()
-end
 
 function BufferController:handleRequest(sender, data)
     local spell = data.data.spell
@@ -79,6 +57,7 @@ function BufferController:handleRequest(sender, data)
     payload.duration = duration
     payload.characterId = characterId
     payload.spellName = spell
+
 
     self.bus:reply(sender, payload)
 end
