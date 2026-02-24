@@ -42,24 +42,9 @@ local function castBotBuffs(botBuffs)
                 local spellToCastName = splits[1]
 
                 local characterToBuff = splits[2]
-                local characterToBuffId = mq.TLO.NetBots(characterToBuff).ID()
+                print("Trying to Buff ", characterToBuff, ' with ', spellToCastName)
 
-
-
-                CONTROLLER:checkBuff(spellToCastName, characterToBuff)
-                --[[
-                local duration = data.duration
-
-                if(duration == 'NULL') then
-                    duration = 0
-                end
-
-                --In ticks
-                if(tonumber(duration) < 30) then
-                    local gemNumber = StringUtil.getValueByName(i, "/Gem")
-                    CastUtil.srl_cast(spellToCastName, gemNumber, characterToBuffId)
-                end
-                --]]
+                CONTROLLER:checkBuff(spellToCastName, characterToBuff, i)
             end
         end
     end

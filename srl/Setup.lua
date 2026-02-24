@@ -8,7 +8,7 @@ local tableUtil = require 'srl/util/tableUtil'
 local movement = require 'srl/Movement'
 local bus = require 'srl/actors/Bus'
 local bufferController = require 'srl/actors/BufferController'
-local responder = require 'srl/actors/BufferResponder'
+local Scheduler = require 'srl/actors/Scheduler'
 
 local setup_export = {}
 
@@ -27,10 +27,9 @@ local function initializeGlobalVars()
     MELEE_STICK_POINT = iniHelper.DEFAULT_MELEE_STICK_POINT_VALUE
     MELEE_DISTANCE = iniHelper.returnValueFromSectionAndKey(iniHelper.ASSIST_SECTION_KEY, iniHelper.MELEE_DISTANCE_KEY)
     RANGED_DISTANCE = iniHelper.returnValueFromSectionAndKey(iniHelper.ASSIST_SECTION_KEY, iniHelper.RANGED_DISTANCE_KEY)
-
-
     BUS = bus:new(mq.TLO.Me.Name())
     CONTROLLER = bufferController:new(BUS)
+    scheduler = Scheduler:new()
 end
 
 local function getBuffInformationFromIni()

@@ -1,5 +1,6 @@
 local mq = require 'mq'
 local actors = require('actors')
+local TableUtil = require 'srl/util/TableUtil'
 
 local Wrapper = {}
 Wrapper.__index = Wrapper
@@ -20,15 +21,11 @@ function Wrapper:new(name)
         self.handlers = {}
 
         local function dispatcher(message)
-            print("RAW MESSAGE RECEIVED:", message)
             local data = message()
             local event = data.event
-            local eventName = data.event.event
-            local payload = data.event.payload
-            print("Payload: ", payload)
 
-            if self.handlers[eventName] then
-                self.handlers[eventName](data.sender, payload)
+            if self.handlers[event] then
+                self.handlers[event](data.sender, data)
             end
         end
 
@@ -49,7 +46,6 @@ end
 
 function Wrapper:send(target, event, data)
     local name = mq.TLO.Me.Name()
-    print("Event -> ", event)
     self.actor:send({mailbox=target, script='srl'}, {
         event = event,
         data = data,

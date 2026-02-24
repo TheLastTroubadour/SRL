@@ -32,7 +32,7 @@ function cast_util_export.srl_cast(spellName, gem, spellTarget)
     if(isSpellReady == true) then
         target.get_target_by_id(spellTarget)
         --param gems
-        mq.cmdf("/bc Casting " .. spellName)
+        mq.cmdf("/echo Casting " .. spellName)
         mq.cmdf("/casting \"%s\"|%s", spellName, gem)
         return
     end

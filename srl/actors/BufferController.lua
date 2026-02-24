@@ -1,5 +1,7 @@
 local mq = require('mq')
 local TableUtil = require 'srl/util/TableUtil'
+local StringUtil = require 'srl/util/StringUtil'
+local CastUtil = require 'srl/util/CastUtil'
 
 local BufferController = {}
 BufferController.__index = BufferController
@@ -15,43 +17,47 @@ function BufferController:new(bus)
 end
 
 function BufferController:register()
-    self.bus:on('buff_status_request', function(sender, data)
-        print("Should be doing something")
+    self.bus.actor:on("buff_reply", function(sender, data)
+        local id = data.data.id
+        if self.bus.pending[id] then
+            self.bus.pending[id]:resolve(data)
+            self.bus.pending[id] = nil
+        end
+    end)
+
+    self.bus.actor:on('buff_status_request', function(sender, data)
         self:handleRequest(sender, data)
     end)
 end
 
-function BufferController:checkBuff(spell, targetName)
-    local id = tostring(math.random(100000,999999))
+function BufferController:checkBuff(spell, targetName, spellData)
 
-    self.pending[id] = {
-        spell = spell,
-        target = name
-    }
+    Srl.scheduler.spawn(function()
+        local reply =self.bus:request(targetName, 'buff_status_request', {
+            spell = spell
+        }):await()
 
-    local prom = self.bus:request(targetName, 'buff_status_request', {
-        spell = spell
-    }):next(function(reply)
-        print('Reply2', reply)
-        self:evaluate(reply)
+        self:evaluate(reply, spellData)
+
     end)
-    :catch(function()
-        print("Buffed has timed out")
-    end)
-    print("Prom: ", prom)
-    print(TableUtil.table_print(prom))
-    return prom
 end
 
-function BufferController:evaluate(reply)
-    print("Eval", reply)
-    if not reply.hasBuff or reply.duration < 120 then
-        self:castBuff(reply.name, reply.spell)
-    end
+function BufferController:evaluate(reply, spellData)
+    self:castBuff(reply, spellData)
 end
 
-function BufferController:castBuff(target, spell)
+function BufferController:castBuff(reply, spellData)
     if mq.gettime() - self.lastCast < self.castThrottle then return end
+    local duration = reply.data.duration
+    local characterToBuffId = reply.data.characterId
+    local spellToCastName = reply.data.spellName
+
+    --In ticks
+    if(tonumber(duration) < 30) then
+        local gemNumber = StringUtil.getValueByName(spellData, "/Gem")
+        CastUtil.srl_cast(spellToCastName, gemNumber, characterToBuffId)
+    end
+
     if not mq.TLO.Me.SpellReady(spell)() then return end
     --Queue?
     CastUtil.srl_cast(spellName, gem, target)
@@ -60,18 +66,21 @@ function BufferController:castBuff(target, spell)
 end
 
 function BufferController:handleRequest(sender, data)
-    local spell = data.spell
-    local buff = mq.TLO.Me.Buff[spell]
-
+    local spell = data.data.spell
+    local buff = mq.TLO.Me.Buff(spell)
+    local characterId = mq.TLO.Me.ID()
     local hasBuff = buff() ~= nil
     local duration = hasBuff and buff.Duration.TotalSeconds() or 0
+    local payload = {}
 
-    self.bus:reply(sender, data.id, {
-        name = mq.TLO.Me.Name(),
-        hasBuff = hasBuff,
-        duration = duration,
-        mana = mq.TLO.Me.PctMana()
-    })
+    payload.id = data.data.id
+    payload.name = mq.TLO.Me.Name()
+    payload.hasBuff = hasBuff
+    payload.duration = duration
+    payload.characterId = characterId
+    payload.spellName = spell
+
+    self.bus:reply(sender, payload)
 end
 
 

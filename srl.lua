@@ -11,6 +11,7 @@ local buff = require "srl/Buff"
 local function mainLoop()
     Logging.Debug("Main Loop Start")
     init.setup();
+
     while true do
         Logging.Debug("Main While loop Start")
         mq.doevents();
@@ -20,8 +21,10 @@ local function mainLoop()
         attack.check_assist()
         buff.check_buff()
         BUS:update()
+        scheduler:run()
+        mq.delay(10)
+
         Logging.Debug("Main While loop End")
-        mq.delay(2000)
     end
 end
 

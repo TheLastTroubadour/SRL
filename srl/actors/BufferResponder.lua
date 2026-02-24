@@ -14,10 +14,6 @@ function BufferResponder:register()
     self.bus:on('buff_status_request', function(sender, data)
         self:handleRequest(sender, data)
     end)
-
-     self.bus:on("bus_test", function(sender, data)
-        print("Test")
-    end)
 end
 
 function BufferResponder:handleRequest(sender, data)
@@ -26,12 +22,13 @@ function BufferResponder:handleRequest(sender, data)
 
     local hasBuff = buff() ~= nil
     local duration = hasBuff and buff.Duration.TotalSeconds() or 0
+    local myId = mq.TLO.Me.ID()
 
     self.bus:reply(sender, data.id, {
         name = mq.TLO.Me.Name(),
         hasBuff = hasBuff,
         duration = duration,
-        mana = mq.TLO.Me.PctMana()
+        characterId = myId
     })
 end
 

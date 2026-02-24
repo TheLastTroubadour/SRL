@@ -1,6 +1,7 @@
 local actors = require 'srl/actors/ActorWrapper'
 local promise = require 'srl/actors/Promise'
 local mq = require 'mq'
+local TableUtil = require 'srl/util/TableUtil'
 
 local Bus = {}
 Bus.__index = Bus
@@ -19,20 +20,10 @@ end
 function Bus:registerCore()
     self.actor:on('bus_event', function(sender, data)
         if self.handlers[data.type] then
-            print("Bus event type")
-            print(data.type)
             self.handlers[data.type](sender, data.payload)
         end
     end)
 
-    self.actor:on("reply", function(sender, data)
-        local id = data.id
-        print("In Bus Reply")
-        if self.pending[id] then
-            self.pending[id]:resolve(data.payload)
-            self.pending[id] = nil
-        end
-    end)
 
     self.actor:on('bus_reply', function(sender, data)
         if self.pending[data.id] then
@@ -66,22 +57,14 @@ function Bus:request(target, eventType, payload, timeout)
 
     self.pending[id] = prom
 
-    self.actor:send({mailbox=target, script='srl'},
-        {
-        id = id,
-        event = eventType,
-        payload = payload,
-        sender = mq.TLO.Me.Name(),
-    })
+    payload.id = id
+    self.actor:send(target, eventType, payload)
 
     return prom
 end
 
-function Bus:reply(target, id, payload)
-    self.actor:send({mailbox=target, script="srl"}, 'bus_reply', {
-        id = id,
-        payload = payload
-    })
+function Bus:reply(target, payload)
+    self.actor:send(target, 'buff_reply', payload)
 end
 
 function Bus:update()
