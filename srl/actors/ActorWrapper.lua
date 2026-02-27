@@ -31,6 +31,7 @@ function Wrapper:new(name)
 
         self.actor = actors.register(name, dispatcher)
         self.newAPI = false
+
     end
 
     return self

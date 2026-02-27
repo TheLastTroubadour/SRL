@@ -1,34 +1,37 @@
 --Macro Created to be full bot scenario for all classes in EQ
 local mq = require "mq";
-local heal = require 'srl/Heal'
-local attack = require 'srl/Attack'
-local init = require "srl/Setup";
-local movement = require 'srl/Movement'
+local init = require "srl/Setup"
 local Logging = require 'Write'
-local buff = require "srl/Buff"
-
+local Bus = require 'srl/actors/Bus'
+local BufferController = require 'srl/actors/BufferController'
+local Scheduler = require 'srl/actors/Scheduler'
+local BuffService = require 'srl/actors/BuffService'
+local CombatService = require 'srl/combat/CombatService'
+local CastService = require 'srl/combat/CastService'
 -- MAIN MACRO LOOP
 local function mainLoop()
     Logging.Debug("Main Loop Start")
     init.setup();
 
+    local scheduler = Scheduler:new()
+    local castService = CastService:new(scheduler)
+    local busService = Bus:new(mq.TLO.Me.Name())
+    castService:setBus(busService)
+    BufferController:new(busService)
+    local combatService = CombatService:new(castService)
+    castService.combatService = combatService
+    local buffService = BuffService:new(busService, scheduler, combatService, castService)
+
     while true do
         Logging.Debug("Main While loop Start")
         mq.doevents();
-        --each class is going to be different going to need to abstract eventually
-        heal.check_healing()
-        movement.check_follow()
-        attack.check_assist()
-        buff.check_buff()
 
         --order matters
         --Process network replies and resolve promises
-        BUS:update()
-
+        busService:update()
         --resume any coroutines waiting on await
         scheduler:run()
 
-        --service logic
         buffService:update()
         mq.delay(10)
 

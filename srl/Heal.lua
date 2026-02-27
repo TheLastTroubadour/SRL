@@ -1,6 +1,6 @@
 local Dannet = require 'srl/DanNet'
 local CastUtil = require 'srl/util/CastUtil'
-local iniHelper = require 'srl/ini/BaseIni'
+local iniHelper = require 'srl/ini/IniHelper'
 
 local healing_export = {}
 local CURRENT_HPS_QUERY = 'Me.PctHPs'

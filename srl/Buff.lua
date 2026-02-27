@@ -2,7 +2,8 @@ local mq = require 'mq'
 local Logging = require 'Write'
 local CastUtil = require 'srl/util/CastUtil'
 local StringUtil = require 'srl/Util/StringUtil'
-local iniHelper = require "srl/ini/BaseIni"
+local iniHelper = require "srl/ini/IniHelper"
+local Promise = require 'srl/actors/Promise'
 buff_export = {}
 
 local function castSelfBuffs(selfBuffs)
@@ -35,36 +36,38 @@ local function castBotBuffs(botBuffs)
     if(ASSISTING == true) then return end
     if(botBuffs ~= nil) then
         if(#botBuffs > 0) then
-            local promises = {}
-            for _, i in ipairs(botBuffs) do
-                local splits = StringUtil.split(i, "/")
-                local spellToCastName = splits[1]
-                local characterToBuff = splits[2]
-                table.insert(promises, buffService:poll(characterToBuff, spellToCastName, i))
-            end
+            scheduler:spawn(function()
+                local promises = {}
+                local requests = {}
+                for _, iniSpellLine in ipairs(botBuffs) do
+                    local splits = StringUtil.split(iniSpellLine, "/")
+                    local spell = splits[1]
+                    local target = splits[2]
+                    local p = buffService:pollIfDue(target, spell, iniSpellLine)
 
-            local replies = Promise.all(promises):await()
-
-            for i, reply in ipairs(replies) do
-                if reply.data.hasBuff then
+                    if p then
+                        table.insert(requests, {
+                            spell = spell,
+                            iniSpellLine = iniSpellLine,
+                            promise = p,
+                        })
+                    end
                 end
 
-                -- Refresh 60 seconds before expiration
-                local refreshWindow = 60
-
-                local nextTime = now + ((reply.data.duration - refreshWindow) * 1000)
-
-                if reply.data.duration <= refreshWindow then
-                    self:enqueue(target, spell, iniSpellLine)
-                else
-                    self.nextCheck[k] = nextTime
+                if #requests == 0 then
+                    return
                 end
 
-            end
+                for _, r in ipairs(requests) do
+                    table.insert(promises, r.promise)
+                end
 
-        else
-            -- No buff → cast immediately
-            self:enqueue(target, spell, iniSpellLine)
+                local replies = Promise.all(promises):await()
+
+                for i, reply in ipairs(replies) do
+                    buffService:handlePollResult(reply.data.name, requests[i], reply)
+                end
+            end)
         end
     end
 end

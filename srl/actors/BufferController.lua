@@ -9,9 +9,6 @@ BufferController.__index = BufferController
 function BufferController:new(bus)
     local self = setmetatable({}, BufferController)
     self.bus = bus
-    self.pending = {}
-    self.castThrottle = 600
-    self.lastCast = 0
     self:register()
     return self
 end
@@ -30,19 +27,6 @@ function BufferController:register()
     end)
 end
 
-function BufferController:checkBuff(spell, targetName, spellData)
-
-        local reply =self.bus:request(targetName, 'buff_status_request', {
-            spell = spell
-        }):await()
-        self:evaluate(reply, spellData)
-end
-
-function BufferController:evaluate(reply, spellData)
-    self:castBuff(reply, spellData)
-end
-
-
 function BufferController:handleRequest(sender, data)
     local spell = data.data.spell
     local buff = mq.TLO.Me.Buff(spell)
@@ -57,7 +41,7 @@ function BufferController:handleRequest(sender, data)
     payload.duration = duration
     payload.characterId = characterId
     payload.spellName = spell
-
+    payload.iniSpellLine = data.data.iniSpellLine
 
     self.bus:reply(sender, payload)
 end

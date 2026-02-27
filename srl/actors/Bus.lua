@@ -56,8 +56,8 @@ function Bus:request(target, eventType, payload, timeout)
     local prom = promise:new(timeout)
 
     self.pending[id] = prom
-
     payload.id = id
+
     self.actor:send(target, eventType, payload)
 
     return prom

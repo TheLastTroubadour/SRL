@@ -3,7 +3,7 @@ local heal = require 'srl/Heal'
 local attack = require 'srl/Attack'
 local iBasic = require 'srl/Basic'
 local Logging = require 'Write'
-local iniHelper = require 'srl/ini/BaseIni'
+local iniHelper = require 'srl/ini/IniHelper'
 local tableUtil = require 'srl/util/tableUtil'
 local movement = require 'srl/Movement'
 local bus = require 'srl/actors/Bus'
@@ -13,6 +13,7 @@ local BuffService = require 'srl/actors/BuffService'
 local TableUtil = require 'srl/util/TableUtil'
 
 local setup_export = {}
+
 
 local function initializeGlobalVars()
     ASSISTING = false
@@ -29,10 +30,6 @@ local function initializeGlobalVars()
     MELEE_STICK_POINT = iniHelper.DEFAULT_MELEE_STICK_POINT_VALUE
     MELEE_DISTANCE = iniHelper.returnValueFromSectionAndKey(iniHelper.ASSIST_SECTION_KEY, iniHelper.MELEE_DISTANCE_KEY)
     RANGED_DISTANCE = iniHelper.returnValueFromSectionAndKey(iniHelper.ASSIST_SECTION_KEY, iniHelper.RANGED_DISTANCE_KEY)
-    scheduler = Scheduler:new()
-    BUS = bus:new(mq.TLO.Me.Name())
-    bufferController:new(BUS)
-    buffService = BuffService:new(BUS)
 end
 
 local function getBuffInformationFromIni()
@@ -49,6 +46,10 @@ local function getBuffInformationFromIni()
     BUFFS_2D[iniHelper.COMBAT_BUFF_KEY] = combatBuffValues;
 
     Logging.Debug("Setup.getBuffInformationFromIni End")
+end
+
+function setup_export:getBuffInformationForKey(key)
+    return iniHelper.readKey(iniHelper.BUFF_SECTION_KEY, key)
 end
 
 local function getHealingFromIni()
@@ -74,6 +75,18 @@ local function getMeleeAbilitiesFromIni()
     Logging.Debug('----------------Melee Abilities Table -------------')
     Logging.Debug(tableUtil.table_print(MELEE_ABILITIES_2D))
     Logging.Debug("Setup.getMeleeAbilitiesFromIni End")
+end
+
+function setup_export:getNukeSetsFromIni()
+    Logging.Debug("Setup.getNukeSetsFromIni Start")
+
+    local nukeSets = iniHelper.readSection(iniHelper.NUKES_SECTION)
+
+    print(tableUtil.table_print(nukeSets))
+    Logging.Debug("----------------spell table --------------")
+    Logging.Debug(tableUtil.table_print(NUKES_2D))
+    Logging.Debug("Setup.getNukeSetsFromIni End")
+    return nukeSets
 end
 
 local function getNukeSetsFromIni()
