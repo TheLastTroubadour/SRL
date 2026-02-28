@@ -1,8 +1,6 @@
 local mq = require('mq')
 local TableUtil = require 'srl/util/TableUtil'
 local StringUtil = require 'srl/util/StringUtil'
-local CastUtil = require 'srl/util/CastUtil'
-
 local BufferController = {}
 BufferController.__index = BufferController
 

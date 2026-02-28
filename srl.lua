@@ -1,13 +1,15 @@
 --Macro Created to be full bot scenario for all classes in EQ
 local mq = require "mq";
 local init = require "srl/Setup"
-local Logging = require 'Write'
-local Bus = require 'srl/actors/Bus'
-local BufferController = require 'srl/actors/BufferController'
-local Scheduler = require 'srl/actors/Scheduler'
-local BuffService = require 'srl/actors/BuffService'
-local CombatService = require 'srl/combat/CombatService'
-local CastService = require 'srl/combat/CastService'
+local Logging = require 'core/Write'
+local Bus = require 'srl/core/Bus'
+local BufferController = require 'srl/controller/BufferController'
+local Scheduler = require 'srl/core/Scheduler'
+local BuffService = require 'srl/service/BuffService'
+local CombatService = require 'srl/service/CombatService'
+local CastService = require 'srl/service/CastService'
+local BindService = require 'srl/service/BindService'
+local CombatController = require 'srl/controller/CombatController'
 -- MAIN MACRO LOOP
 local function mainLoop()
     Logging.Debug("Main Loop Start")
@@ -19,13 +21,13 @@ local function mainLoop()
     castService:setBus(busService)
     BufferController:new(busService)
     local combatService = CombatService:new(castService)
+    BindService:new(combatService)
     castService.combatService = combatService
+    CombatController:new(busService, combatService)
     local buffService = BuffService:new(busService, scheduler, combatService, castService)
 
     while true do
         Logging.Debug("Main While loop Start")
-        mq.doevents();
-
         --order matters
         --Process network replies and resolve promises
         busService:update()
@@ -33,6 +35,7 @@ local function mainLoop()
         scheduler:run()
 
         buffService:update()
+        combatService:update()
         mq.delay(10)
 
         Logging.Debug("Main While loop End")

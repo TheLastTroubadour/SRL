@@ -1,7 +1,7 @@
 
 local mq = require 'mq'
-local Logging = require 'write'
-local target = require 'srl/Target'
+local Logging = require 'srl/core/write'
+local target = require 'srl/service/TargetService'
 
 cast_util_export = {}
 

@@ -24,7 +24,6 @@ function BuffService:new(bus, scheduler, combatService, castService)
     self.combatService = combatService
     self.castService = castService
     self.explicitRequests = {}
-    self.inCombat = false
     self.bus = bus
     self.requested = {}     -- target:spell currently polling
     self.queue = {}         -- cast queue
@@ -143,13 +142,13 @@ function BuffService:handlePollPromise(target, buffEntry, promise)
         self.requested[k] = nil
 
         -- If promise failed (timeout)
-        if not reply.data then
+        if not reply then
             -- Retry soon but not instantly
             self.nextCheck[k] = now + 3000
             return
         end
 
-        local inCombat = mq.TLO.Me.Combat()
+        local inCombat = self.combatService:isInCombat()
         ------------------------------------------------
         -- 1️⃣ Buff does NOT exist → cast it
         ------------------------------------------------

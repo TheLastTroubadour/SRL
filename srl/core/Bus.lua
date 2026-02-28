@@ -45,10 +45,7 @@ function Bus:on(eventType, callback)
 end
 
 function Bus:broadcast(eventType, payload)
-    self.actor:send(nil, 'bus_event', {
-        type = eventType,
-        payload = payload
-    })
+    self.actor:broadcast(eventType, payload)
 end
 
 function Bus:request(target, eventType, payload, timeout)

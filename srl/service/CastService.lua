@@ -1,7 +1,7 @@
 local mq = require 'mq'
 local TableUtil = require 'srl/util/TableUtil'
 local Logging = require 'Write'
-local Target = require 'srl/Target'
+local Target = require 'TargetService'
 
 local CastService = {}
 CastService.__index = CastService
@@ -118,6 +118,7 @@ function CastService:srlCast(job)
     if(isSpellReady) then
         Target:get_target_by_id(job.targetId)
         --param gems
+        --need to stop moving as well
         local castTime = mq.TLO.Spell(job.spell).CastTime.TotalSeconds() * 1000 + 1500
         mq.cmdf("/casting \"%s\"|%s", job.spell, job.gem)
         mq.delay(castTime)

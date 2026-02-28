@@ -1,9 +1,9 @@
 local mq = require 'mq'
-local target_export = {}
+local TargetService = {}
 
-function target_export:get_target_by_id(targetId)
+function TargetService:get_target_by_id(targetId)
     mq.cmdf("/target id %s", tostring(targetId));
     mq.delay(150)
 end
 
-return target_export
+return TargetService
