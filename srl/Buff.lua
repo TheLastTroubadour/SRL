@@ -1,9 +1,9 @@
 local mq = require 'mq'
-local Logging = require 'Write'
+local Logging = require 'srl/core/Write'
 local CastUtil = require 'srl/util/CastUtil'
 local StringUtil = require 'srl/Util/StringUtil'
 local iniHelper = require "srl/ini/IniHelper"
-local Promise = require 'srl/actors/Promise'
+local Promise = require 'srl/core/Promise'
 buff_export = {}
 
 local function castSelfBuffs(selfBuffs)

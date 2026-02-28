@@ -1,6 +1,6 @@
 local mq = require 'mq'
-local target = require 'srl/target'
-local Logging = require 'Write'
+local TargetService = require 'srl/service/TargetService'
+local Logging = require 'srl/core/Write'
 --All Movements related functionality
 local movement_export = {}
 
@@ -12,7 +12,7 @@ local function follow(followId)
     FOLLOW_TARGET_ID = followId;
     mq.cmd("/stick off")
     mq.cmd("/afollow off")
-    target.get_target_by_id(followId)
+    TargetService:getTargetById(followId)
     mq.cmd("/afollow on")
     Logging.Debug("Movement.follow End")
 end

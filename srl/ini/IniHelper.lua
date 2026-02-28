@@ -1,5 +1,5 @@
 local mq = require 'mq'
-local Logging = require 'Write'
+local Logging = require 'srl/core/Write'
 local TableUtil = require 'srl/util/TableUtil'
 
 --Swap Item

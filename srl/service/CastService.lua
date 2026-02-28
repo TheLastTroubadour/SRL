@@ -1,7 +1,8 @@
 local mq = require 'mq'
 local TableUtil = require 'srl/util/TableUtil'
-local Logging = require 'Write'
-local Target = require 'TargetService'
+local Logging = require 'srl/core/Write'
+local Target = require 'srl/service/TargetService'
+local State = require 'srl.core.State'
 
 local CastService = {}
 CastService.__index = CastService
@@ -51,7 +52,7 @@ function CastService:startWorker()
 
                 -- Skip outdated combat jobs
                 if job.generation
-                        and job.generation ~= self.combatService.generation
+                        and job.generation ~= State.assist.generation
                 then
                     print("Skipping outdated job")
                 else

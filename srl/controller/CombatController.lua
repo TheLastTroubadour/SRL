@@ -1,26 +1,23 @@
 local CombatController = {}
+local State = require 'srl.core.State'
+local TableUtil = require 'srl.util.TableUtil'
 CombatController.__index = CombatController
 
-function CombatController:new(bus, combatService)
+function CombatController:new(combatService)
     local self = setmetatable({}, CombatController)
 
-    self.bus = bus
     self.combatService = combatService
-    self:register()
+
     return self
 end
 
-function CombatController:register()
-    self.bus.actor:on("assist", function(sender, data)
-        print("Assist Actor")
-        print(data)
-        -- Don't react to your own broadcast
-        if data.sender == mq.TLO.Me.Name() then
-            return
-        end
+function CombatController:assist(payload)
 
-        self.combatService:assist(data.targetName)
-    end)
+    print("In CombatController")
+    State:updateAssistState(payload)
+    print(TableUtil.table_print(payload))
+
+    self.combatService:assist(payload.id)
 end
 
 return CombatController

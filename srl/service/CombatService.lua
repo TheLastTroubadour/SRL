@@ -1,13 +1,12 @@
 local mq = require 'mq'
 local CombatService = {}
+local State = require 'srl.core.State'
 CombatService.__index = CombatService
 
 function CombatService:new(castService)
     local self = setmetatable({}, CombatService)
 
     self.castService = castService
-    self.currentTarget = nil
-    self.generation = 0
     self.rotation =
     {
         spellRotation = {},
@@ -21,18 +20,26 @@ function CombatService:isInCombat()
     return mq.TLO.Me.Combat()
 end
 
-function CombatService:assist(targetId)
+function CombatService:assist()
 
-    if not targetId then return end
+    print("In Combat Service")
+    local targetId = State.assist.targetID
+    print(targetId)
 
-    if self.currentTarget ~= targetId then
-        self.currentTarget = targetId
-        self.generation = self.generation + 1
+    if not State.assist.targetID then return end
+
+    if State.assist.targetID ~= mq.TLO.Target.ID() then
 
         print("New assist target:", targetId)
 
         -- Clear any queued combat jobs
         self.castService:clearCombatQueue()
+    end
+
+    print("Calling assist")
+
+    if(State.assist.sender == mq.TLO.Me.Name()) then
+        return
     end
 
     mq.cmdf('/target id %s', targetId)
@@ -87,6 +94,8 @@ function CombatService:canUse(job)
         if mq.TLO.Me.CombatAbilityReady(job.spell)() then
         end
     end
+
+    job.generation = State.assist.generation
 
     self.castService:enqueue(job)
 end
