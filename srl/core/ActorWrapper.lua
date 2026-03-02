@@ -23,7 +23,6 @@ function Wrapper:new(name)
         local function dispatcher(message)
             local data = message()
             local event = data.event
-            print("New event " .. event)
 
             if self.handlers[event] then
                 self.handlers[event](data.sender, data)

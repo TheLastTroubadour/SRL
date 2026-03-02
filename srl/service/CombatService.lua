@@ -22,9 +22,7 @@ end
 
 function CombatService:assist()
 
-    print("In Combat Service")
     local targetId = State.assist.targetID
-    print(targetId)
 
     if not State.assist.targetID then return end
 

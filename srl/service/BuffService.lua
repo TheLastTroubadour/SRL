@@ -11,13 +11,14 @@ local SPELL = "spell"
 local Ability = "ability"
 local AA = "aa"
 
-function BuffService:new(bus, scheduler, combatService, castService)
+function BuffService:new(bus, scheduler, combatService, castService, config)
     local self = setmetatable({}, BuffService)
 
+    self.config = config
     self.policy = {
-        selfBuffs = self:getBuffInformationForKey(IniHelper.SELF_BUFF_KEY),
-        combatBuffs = self:getBuffInformationForKey(IniHelper.COMBAT_BUFF_KEY),
-        botBuffs = self:getBuffInformationForKey(IniHelper.BOT_BUFF_KEY)
+        selfBuffs = self:getBuffInformationForKey('Buffs.SelfBuff'),
+        combatBuffs = self:getBuffInformationForKey('Buffs.CombatBuff'),
+        botBuffs = self:getBuffInformationForKey('Buffs.BotBuff')
     }
 
     self.scheduler = scheduler
@@ -39,23 +40,23 @@ end
 
 function BuffService:pollIfDue(target, spell, iniSpellLine)
 
+
     local k = key(target, spell)
     local now = mq.gettime()
 
     --supression active
-    if self.cooldowns[k] and now < self.cooldowns[k] then
+    if self.cooldowns[k] and now > self.cooldowns[k] then
         return nil
     end
 
     -- Not time yet
     if self.nextCheck[k] and now > self.nextCheck[k] then
-
         return nil
     end
 
     -- Already polling
-    if self.requested[k] then
-        return
+    if self.requested[k] == true then
+        return nil
     end
     self.requested[k] = true
 
@@ -87,6 +88,7 @@ end
 
 function BuffService:processCategory(category, inCombat)
 
+
     local spells = self.policy[category]
     if not spells then return end
     if #spells == 0 then return end
@@ -99,6 +101,8 @@ function BuffService:processCategory(category, inCombat)
             end
         end
 
+        buff.category = category
+
         local p = self:pollIfDue(buff.target, buff.spell, buff.iniLine)
         if p then
             self:handlePollPromise(buff.target, buff, p)
@@ -109,23 +113,24 @@ function BuffService:processCategory(category, inCombat)
 end
 
 function BuffService:getBuffInformationForKey(key)
-    local values = IniHelper.readKey(IniHelper.BUFF_SECTION_KEY, key)
+    local values = self.config:Get(key)
     local jobList = {}
-    for _,v in ipairs(values) do
-        local splits = StringUtil.split(v, '/')
-        local spellName = tostring(splits[1])
-        local target
-        if(key == IniHelper.SELF_BUFF_KEY) then
-            target = mq.TLO.Me.Name()
+    for _, v in ipairs(values) do
+        local spellName = v.spell
+        local gem = v.gem or 8
+        if(v.charactersToBuff) then
+            for _, character in ipairs(v.charactersToBuff) do
+                --TODO need to fix IniLine and don't need generation for buffs and add conditions instead of iniLine
+                local job = Job:new(character, spellName, 'spell', 0, {}, gem)
+                table.insert(jobList, job)
+            end
         else
-            --validation
-            target = tostring(splits[2])
+            local character = mq.TLO.Me.Name()
+            local job = Job:new(character, spellName, 'spell', 0, {}, gem)
+            table.insert(jobList, job)
         end
-
-        local job = Job:new(target, spellName, SPELL, 0, v)
-        job.category = key
-        table.insert(jobList, job)
     end
+
     return jobList
 end
 
@@ -138,13 +143,14 @@ function BuffService:handlePollPromise(target, buffEntry, promise)
         local k = key(target, buffEntry.spell)
         local now = mq.gettime()
 
-        -- Clear in-flight no matter what
-        self.requested[k] = nil
+        if reply then
+            self.requested[k] = nil
+        end
 
         -- If promise failed (timeout)
         if not reply then
             -- Retry soon but not instantly
-            self.nextCheck[k] = now + 3000
+            self.nextCheck[k] = now + 5000
             return
         end
 
@@ -155,7 +161,7 @@ function BuffService:handlePollPromise(target, buffEntry, promise)
         if not reply.data.hasBuff then
 
             -- If long group buff and in combat and not explicit → skip
-            if buffEntry.category == IniHelper.BOT_BUFF_KEY
+            if buffEntry.category == 'botBuffs'
                     and inCombat
                     and not self.explicitRequests[k]
             then
@@ -164,8 +170,9 @@ function BuffService:handlePollPromise(target, buffEntry, promise)
             end
 
             -- Suppress immediate re-poll
-            self.cooldowns[k] = now + 3000
+            self.cooldowns[k] = now + 30000
 
+            print("Queueing")
             -- Enqueue cast
             self.castService:enqueue(buffEntry)
 

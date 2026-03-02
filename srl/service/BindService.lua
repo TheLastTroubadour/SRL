@@ -18,8 +18,6 @@ function BindService:bindAssist()
   mq.bind('/assistme', function(...)
         local args = {...}
         local targetId = args[1]
-        print(self)
-        print(targetId)
         self.combatService:assist(targetId)
     end)
 end

@@ -11,10 +11,61 @@ local CastService = require 'srl/service/CastService'
 local BindService = require 'srl/service/BindService'
 local CombatController = require 'srl/controller/CombatController'
 local CommandBus = require 'srl/core/CommandBus'
+local Config = require 'srl.config.Config'
+local Base = require 'srl.config.defaults.Base'
+local Class = require 'srl.config.defaults.Class'
+local Role = require 'srl.config.defaults.Role'
+local RoleService = require 'srl.service.RoleService'
+local PackageMan = require('mq/PackageMan')
+local TableUtil = require 'srl.util.TableUtil'
+PackageMan.Require('lyaml')
+PackageMan.Require('luafilesystem', 'lfs')
+
+local function merge(a, b)
+    for k, v in pairs(b) do
+        if type(v) == "table" then
+            a[k] = a[k] or {}
+            merge(a[k], v)
+        else
+            a[k] = v
+        end
+    end
+end
+
+local function buildDefaults()
+    local class = mq.TLO.Me.Class.ShortName()
+    local defaults = {}
+
+    -- 1️⃣ Base
+    merge(defaults, Base)
+
+    -- 2️⃣ Class
+    if Class[class] then
+        merge(defaults, Class[class])
+    end
+
+    -- 3️⃣ Multiple Roles
+    local roles = RoleService:getRoles()
+
+    for _, role in ipairs(roles) do
+        if Role[role] then
+            merge(defaults, Roles[role])
+        end
+    end
+
+    return defaults
+end
+
 -- MAIN MACRO LOOP
 local function mainLoop()
     Logging.Debug("Main Loop Start")
     init.setup();
+
+    local config = Config:new(Base)
+    config:Load()
+
+    local layeredDefaults = buildDefaults(config.data)
+    config.defaults = layeredDefaults
 
     local scheduler = Scheduler:new()
     local castService = CastService:new(scheduler)
@@ -25,7 +76,7 @@ local function mainLoop()
     BindService:new(combatService)
     castService.combatService = combatService
     local combatController = CombatController:new(combatService)
-    local buffService = BuffService:new(busService, scheduler, combatService, castService)
+    local buffService = BuffService:new(busService, scheduler, combatService, castService, config)
     CommandBus:init()
     CommandBus:register('Assist', function(payload)
         combatController:assist(payload)
@@ -46,5 +97,7 @@ local function mainLoop()
         Logging.Debug("Main While loop End")
     end
 end
+
+
 
 mainLoop();

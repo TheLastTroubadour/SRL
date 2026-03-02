@@ -73,12 +73,15 @@ function CastService:performCast(job)
     self.isCasting = true
 
     -- announce cast start
+    -- Couldn't get broadcast to work
+    --[[
     self.bus:broadcast("cast_started", {
         caster = mq.TLO.Me.Name(),
         spell = job.spell,
         targetId = job.Id,
         type = job.type
     })
+    --]]
 
     local result
 
@@ -93,22 +96,40 @@ function CastService:performCast(job)
     end
 
     -- announce completion
+    --[[
     self.bus:broadcast("cast_finished", {
         caster = mq.TLO.Me.Name(),
         spell = job.spell,
         targetId = job.targetId,
         success = result
     })
+    --]]
 
     self.isCasting = false
 
     return result
 end
 
-function CastService:castSpell(job)
-    self:srlCast(job)
+local function hasEnoughMana(spellName)
+    local spell = mq.TLO.Spell(spellName)
+    if not spell() then
+        print("Spell not found:", spellName)
+        return false
+    end
+
+    local manaCost = spell.Mana() or 0
+    local currentMana = mq.TLO.Me.CurrentMana() or 0
+
+    return currentMana >= manaCost
 end
 
+function CastService:castSpell(job)
+    if not hasEnoughMana(job.spell) then
+        print("Not enough mana for: " .. job.spell)
+        return
+    end
+    self:srlCast(job)
+end
 
 function CastService:srlCast(job)
     Logging.Debug("Cast Util Export SRL Cast Start")
@@ -117,7 +138,7 @@ function CastService:srlCast(job)
     local isSpellReady = self.isCasting and mq.TLO.Cast.Ready(job.spell)
     Logging.Debug(("Is spell ready %s --- %s "):format(job.spell, isSpellReady))
     if(isSpellReady) then
-        Target:get_target_by_id(job.targetId)
+        Target:getTargetById(job.targetId)
         --param gems
         --need to stop moving as well
         local castTime = mq.TLO.Spell(job.spell).CastTime.TotalSeconds() * 1000 + 1500
