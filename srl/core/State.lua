@@ -4,13 +4,15 @@ State.assist = {
     generation = 0,
     targetID   = nil,
     scope      = nil,
+    active = false,
     sender = nil,
 }
 
 -- ===== Follow State =====
 State.follow = {
-    targetName = nil,
+    followName = nil,
     active     = false,
+    followId = nil,
 }
 
 -- ===== Burn State =====
@@ -28,8 +30,8 @@ State.flags = {
 -- Follow Helpers
 ------------------------------------------------
 
-function State:setFollow(targetName)
-    self.follow.targetName = targetName
+function State:setFollow(payload)
+    self.follow.followId = payload.id
     self.follow.active = true
 end
 
@@ -37,10 +39,15 @@ function State:stopFollow()
     self.follow.active = false
 end
 
+function State:stopAssist()
+    self.assist.active = false
+end
+
 function State:updateAssistState(payload)
     self.assist.generation = payload.generation
     self.assist.targetID = payload.id
     self.assist.sender = payload.sender
+    self.assist.active = true
 end
 
 return State

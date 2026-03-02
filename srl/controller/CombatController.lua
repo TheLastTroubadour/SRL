@@ -13,9 +13,7 @@ end
 
 function CombatController:assist(payload)
 
-    print("In CombatController")
     State:updateAssistState(payload)
-    print(TableUtil.table_print(payload))
 
     self.combatService:assist(payload.id)
 end

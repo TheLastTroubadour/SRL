@@ -51,17 +51,17 @@ function CastService:startWorker()
                 local job = table.remove(self.queue, 1)
 
                 -- Skip outdated combat jobs
-                if job.generation
-                        and job.generation ~= State.assist.generation
-                then
-                    print("Skipping outdated job")
-                else
-                    self:performCast(job)
+                if(State.assist.active) then
+                    if job.generation
+                            and job.generation ~= State.assist.generation
+                    then
+                        print("Skipping outdated job")
+                        return
+                    end
                 end
+                self:performCast(job)
             end
-
         end
-
     end)
 end
 
@@ -133,8 +133,6 @@ end
 
 function CastService:srlCast(job)
     Logging.Debug("Cast Util Export SRL Cast Start")
-    print("Srl Cast ")
-    print(TableUtil.table_print(job))
     local isSpellReady = self.isCasting and mq.TLO.Cast.Ready(job.spell)
     Logging.Debug(("Is spell ready %s --- %s "):format(job.spell, isSpellReady))
     if(isSpellReady) then

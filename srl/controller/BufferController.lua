@@ -39,6 +39,7 @@ function BufferController:handleRequest(sender, data)
     payload.duration = duration
     payload.characterId = characterId
     payload.spellName = spell
+    payload.generation = data.data.generation
     payload.iniSpellLine = data.data.iniSpellLine
 
     self.bus:reply(sender, payload)

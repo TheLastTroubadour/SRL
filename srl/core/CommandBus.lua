@@ -9,15 +9,17 @@ function CommandBus:init()
     local commandBus = self
 
     mq.bind('/srlevent', function(...)
-        local args = {...}
+        local args = { ... }
         local command = table.remove(args, 1)
 
-        if not command then return end
+        if not command then
+            return
+        end
 
         local payload = {}
 
         for _, token in ipairs(args) do
-            local k,v = token:match("([^=]+)=([^=]+)")
+            local k, v = token:match("([^=]+)=([^=]+)")
             if k and v then
                 payload[k] = v
             end
@@ -28,21 +30,62 @@ function CommandBus:init()
 
     mq.unbind('/assiston')
     mq.bind('/assiston', function(...)
-        local args = {...}
+        local args = { ... }
         local command = table.remove(args, 1)
         print("Command " .. command)
-        if not command then return end
+        if not command then
+            return
+        end
 
         local payload = {}
 
         for _, token in ipairs(args) do
-            local k,v = token:match("([^=]+)=([^=]+)")
+            local k, v = token:match("([^=]+)=([^=]+)")
             if k and v then
                 payload[k] = v
             end
         end
         mq.cmdf('/dgae /srlevent Assist id=%s generation=%s sender=%s', mq.TLO.Target.ID(), State.assist.generation + 1, mq.TLO.Me.Name())
     end)
+
+    mq.unbind('/followme')
+    mq.bind('/followme', function(...)
+        local args = { ... }
+        local command = table.remove(args, 1)
+        if not command then
+            return
+        end
+
+        local payload = {}
+
+        for _, token in ipairs(args) do
+            local k, v = token:match("([^=]+)=([^=]+)")
+            if k and v then
+                payload[k] = v
+            end
+        end
+        mq.cmdf('/dgae /srlevent Follow id=%s sender=%s', mq.TLO.Target.ID(), mq.TLO.Me.Name())
+    end)
+
+    mq.unbind('/stop')
+    mq.bind('/stop', function(...)
+        local args = { ... }
+        local command = table.remove(args, 1)
+        if not command then
+            return
+        end
+
+        local payload = {}
+
+        for _, token in ipairs(args) do
+            local k, v = token:match("([^=]+)=([^=]+)")
+            if k and v then
+                payload[k] = v
+            end
+        end
+        mq.cmdf('/dgae /srlevent Stop sender=%s', mq.TLO.Me.Name())
+    end)
+
 end
 
 function CommandBus:register(command, handler)

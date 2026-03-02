@@ -1,6 +1,5 @@
 local actors = require 'srl/core/ActorWrapper'
 local promise = require 'srl/core/Promise'
-local mq = require 'mq'
 local TableUtil = require 'srl/util/TableUtil'
 
 local Bus = {}

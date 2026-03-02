@@ -18,6 +18,8 @@ local Role = require 'srl.config.defaults.Role'
 local RoleService = require 'srl.service.RoleService'
 local PackageMan = require('mq/PackageMan')
 local TableUtil = require 'srl.util.TableUtil'
+local FollowController = require 'srl.controller.FollowController'
+local FollowService = require 'srl.service.FollowService'
 PackageMan.Require('lyaml')
 PackageMan.Require('luafilesystem', 'lfs')
 
@@ -82,6 +84,17 @@ local function mainLoop()
         combatController:assist(payload)
     end)
 
+    local followService = FollowService:new()
+    local followController = FollowController:new(followService)
+
+    CommandBus:register('Follow', function(payload)
+        followController:follow(payload)
+    end)
+
+    CommandBus:register('Stop', function(payload)
+        followController:stop()
+    end)
+
     while true do
         Logging.Debug("Main While loop Start")
         --order matters
@@ -92,7 +105,7 @@ local function mainLoop()
 
         buffService:update()
         combatService:update()
-        mq.delay(10)
+        mq.delay(100)
 
         Logging.Debug("Main While loop End")
     end

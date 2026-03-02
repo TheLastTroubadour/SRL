@@ -42,6 +42,8 @@ function CombatService:assist()
 
     mq.cmdf('/target id %s', targetId)
     mq.delay(150)
+    mq.cmd('/face')
+    mq.delay(100)
     mq.cmdf('/stick behind loose')
     mq.delay(50)
     mq.cmd('/attack on')

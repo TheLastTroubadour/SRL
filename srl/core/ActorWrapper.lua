@@ -55,7 +55,7 @@ function Wrapper:send(target, event, data)
 end
 
 function Wrapper:broadcast(event, data)
-    self.actor.send({}, {
+    self.actor:send({}, {
         event = event,
         data = data,
         sender = data.sender
