@@ -1,15 +1,9 @@
 local mq = require 'mq'
 local TableUtil = require 'srl/util/TableUtil'
 local StringUtil = require 'srl/util/StringUtil'
-local CastUtil = require 'srl/util/CastUtil'
 local Job = require 'srl/model/Job'
-local IniHelper = require 'srl/ini/IniHelper'
 local BuffService = {}
 BuffService.__index = BuffService
-
-local SPELL = "spell"
-local Ability = "ability"
-local AA = "aa"
 
 function BuffService:new(bus, scheduler, combatService, castService, config)
     local self = setmetatable({}, BuffService)
@@ -34,23 +28,22 @@ function BuffService:new(bus, scheduler, combatService, castService, config)
     return self
 end
 
-local function key(target, spell)
-    return target .. ":" .. spell
+local function key(target, spellName)
+    return target .. ":" .. spellName
 end
 
-function BuffService:pollIfDue(target, spell, iniSpellLine)
-
+function BuffService:pollIfDue(target, spell)
 
     local k = key(target, spell)
     local now = mq.gettime()
 
     --supression active
-    if self.cooldowns[k] and now > self.cooldowns[k] then
+    if self.cooldowns[k] and now < self.cooldowns[k] then
         return nil
     end
 
     -- Not time yet
-    if self.nextCheck[k] and now > self.nextCheck[k] then
+    if self.nextCheck[k] and now < self.nextCheck[k] then
         return nil
     end
 
@@ -64,7 +57,7 @@ function BuffService:pollIfDue(target, spell, iniSpellLine)
             target,
             "buff_status_request",
             { spell = spell,
-              iniSpellLine = iniSpellLine },
+            },
             2000
     )
 end
@@ -90,10 +83,14 @@ function BuffService:processCategory(category, inCombat)
 
 
     local spells = self.policy[category]
-    if not spells then return end
-    if #spells == 0 then return end
+    if not spells then
+        return
+    end
+    if #spells == 0 then
+        return
+    end
 
-    for _,buff in ipairs(spells) do
+    for _, buff in ipairs(spells) do
         -- Gate long buffs during combat
         if category == "botBuffs" and inCombat then
             if not self.explicitRequests[buff.target .. ":" .. buff.spell] then
@@ -103,31 +100,34 @@ function BuffService:processCategory(category, inCombat)
 
         buff.category = category
 
-        local p = self:pollIfDue(buff.target, buff.spell, buff.iniLine)
+        local p = self:pollIfDue(buff.targetName, buff.name)
         if p then
-            self:handlePollPromise(buff.target, buff, p)
+            self:handlePollPromise(buff.targetName, buff, p)
         end
 
-        ::continue::
+        :: continue ::
     end
 end
 
 function BuffService:getBuffInformationForKey(key)
     local values = self.config:Get(key)
     local jobList = {}
-    for _, v in ipairs(values) do
-        local spellName = v.spell
-        local gem = v.gem or 8
-        if(v.charactersToBuff) then
-            for _, character in ipairs(v.charactersToBuff) do
-                --TODO need to fix IniLine and don't need generation for buffs and add conditions instead of iniLine
-                local job = Job:new(character, spellName, 'spell', 0, {}, gem)
+    if values then
+        for _, v in ipairs(values) do
+            local spellName = v.spell
+            local gem = v.gem or 8
+            if (v.charactersToBuff) then
+                for _, character in ipairs(v.charactersToBuff) do
+                    --TODO need to fix IniLine and don't need generation for buffs and add conditions instead of iniLine
+                    local targetId = mq.TLO.Spawn('pc = ' .. character).ID()
+                    local job = Job:new(targetId, character, spellName, 'spell', 0, gem)
+                    table.insert(jobList, job)
+                end
+            else
+                local characterId = mq.TLO.Me.ID()
+                local job = Job:new(characterId, mq.TLO.Me.Name(), spellName, 'spell', 0, gem)
                 table.insert(jobList, job)
             end
-        else
-            local character = mq.TLO.Me.Name()
-            local job = Job:new(character, spellName, 'spell', 0, {}, gem)
-            table.insert(jobList, job)
         end
     end
 
@@ -140,12 +140,13 @@ function BuffService:handlePollPromise(target, buffEntry, promise)
 
         local reply, err = promise:await()
 
-        local k = key(target, buffEntry.spell)
+        local k = key(target, buffEntry.name)
         local now = mq.gettime()
 
         if reply then
             self.requested[k] = nil
         end
+
 
         -- If promise failed (timeout)
         if not reply then
@@ -169,47 +170,66 @@ function BuffService:handlePollPromise(target, buffEntry, promise)
                 return
             end
 
-            -- Suppress immediate re-poll
-            self.cooldowns[k] = now + 30000
 
-            print("Queueing")
+            -- Suppress immediate re-poll
+            self.cooldowns[k] = now + 5000
+
+            if self.castService:isQueued(buffEntry) == true then
+                --Currently queued
+                return
+            end
+
+            print("Does not have buff")
+
             -- Enqueue cast
             self.castService:enqueue(buffEntry)
 
             -- Retry check later
-            self.nextCheck[k] = now + 5000
-            return
+            self.nextCheck[k] = now + 10000
         end
 
         ------------------------------------------------
         -- 2️⃣ Buff exists → check duration
         ------------------------------------------------
-        local refreshWindow = mq.TLO.Spell(buffEntry.spell).Duration.TotalSeconds() * .1
-        local duration = reply.data.duration or 0
+        if (reply.data.hasBuff) then
+            local refreshWindow = mq.TLO.Spell(buffEntry.name).Duration.TotalSeconds() * .1
+            local duration = reply.data.duration or 0
 
-        --within 10% of the original cast time
-        if duration <= refreshWindow then
+            --within 10% of the original cast time
+            if duration <= refreshWindow then
 
-            -- Same combat gating logic
-            if inCombat
-                    and not self.explicitRequests[k]
-            then
-                self.nextCheck[k] = now + 5000
-                return
+                -- Same combat gating logic
+                if inCombat
+                        and not self.explicitRequests[k]
+                then
+                    self.nextCheck[k] = now + 5000
+                    return
+                end
+
+
+                self.cooldowns[k] = now + 3000
+
+                if self.castService:isQueued(buffEntry) == true then
+                    --Currently queued
+                    return
+                end
+
+                print("Within 10%")
+
+                self.castService:enqueue(buffEntry)
+
+                self.nextCheck[k] = now + 100000
             end
-
-            self.cooldowns[k] = now + 3000
-
-            self.castService:enqueue(buffEntry)
-
-            self.nextCheck[k] = now + 5000
-            return
+            ------------------------------------------------
+            -- 3️⃣ Buff healthy → schedule next expiration check
+            ------------------------------------------------
+            self.nextCheck[k] = now + (duration * .8 * 1000)
+            print("Buff Healthy")
+            print(self.nextCheck[k])
+            print(now)
         end
 
-        ------------------------------------------------
-        -- 3️⃣ Buff healthy → schedule next expiration check
-        ------------------------------------------------
-        self.nextCheck[k] = now + (duration * .8 * 1000)
+
 
         -- Clear explicit request if fulfilled
         if self.explicitRequests[k] then

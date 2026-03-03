@@ -26,6 +26,8 @@ function BufferController:register()
 end
 
 function BufferController:handleRequest(sender, data)
+    print("Data for Request:")
+    print(TableUtil.table_print(data))
     local spell = data.data.spell
     local buff = mq.TLO.Me.Buff(spell)
     local characterId = mq.TLO.Me.ID()
@@ -40,7 +42,6 @@ function BufferController:handleRequest(sender, data)
     payload.characterId = characterId
     payload.spellName = spell
     payload.generation = data.data.generation
-    payload.iniSpellLine = data.data.iniSpellLine
 
     self.bus:reply(sender, payload)
 end

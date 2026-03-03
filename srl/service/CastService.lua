@@ -13,9 +13,8 @@ function CastService:new(scheduler, combatService)
     self.scheduler = scheduler
     self.combatService = combatService
     self.queue = {}
-    self.currentJob = nil
-    self.isCasting = false
-
+    self.queuedKeys = {}
+    self.currentlyInFlight = nil
     self:startWorker()
 
     return self
@@ -26,17 +25,10 @@ function CastService:setBus(bus)
 end
 
 function CastService:enqueue(job)
-    -- prevent duplicates
-    for _,existing in ipairs(self.queue) do
-        if existing.target == job.target
-                and existing.spell == job.spell
-                and existing.category == job.category
-        then
-            return
-        end
-    end
+    if self.queuedKeys[job.key] then return end
 
     table.insert(self.queue, job)
+    self.queuedKeys[job.key] = true
 end
 
 function CastService:startWorker()
@@ -44,12 +36,23 @@ function CastService:startWorker()
     self.scheduler:spawn(function()
 
         while true do
+            if self.currentlyInFlight then
+                if not mq.TLO.Me.Casting() then
+                    self.currentlyInFlight = false
+                end
+                return
+            end
 
             if #self.queue == 0 then
                 mq.delay(50)
             else
-                local job = table.remove(self.queue, 1)
+                if #self.queue > 1 then
+                    table.sort(self.queue, function(a, b)
+                        return a.priority > b.priority
+                    end)
+                end
 
+                local job = table.remove(self.queue, 1)
                 -- Skip outdated combat jobs
                 if(State.assist.active) then
                     if job.generation
@@ -59,19 +62,16 @@ function CastService:startWorker()
                         return
                     end
                 end
+                self.currentlyInFlight = job
                 self:performCast(job)
+                self.currentlyInFlight = nil
+                self.queuedKeys[job.key] = nil
             end
         end
     end)
 end
 
 function CastService:performCast(job)
-    if self.isCasting then
-        return { success = false, reason = "Already casting" }
-    end
-
-    self.isCasting = true
-
     -- announce cast start
     -- Couldn't get broadcast to work
     --[[
@@ -83,6 +83,7 @@ function CastService:performCast(job)
     })
     --]]
 
+
     local result
 
     if job.type == "spell" then
@@ -93,6 +94,8 @@ function CastService:performCast(job)
         result = self:castItem(job)
     elseif job.type == "disc" then
         result = self:castDisc(job)
+    elseif job.type == 'ability' then
+        result = self:castAbility(job)
     end
 
     -- announce completion
@@ -105,9 +108,11 @@ function CastService:performCast(job)
     })
     --]]
 
-    self.isCasting = false
-
     return result
+end
+
+function CastService:isQueued(job)
+    return self.queuedKeys[job.key] == true
 end
 
 local function hasEnoughMana(spellName)
@@ -123,9 +128,14 @@ local function hasEnoughMana(spellName)
     return currentMana >= manaCost
 end
 
+function CastService:castAbility(job)
+    print("In Cast Ability")
+    mq.cmdf('/doability %s', job.name)
+end
+
 function CastService:castSpell(job)
-    if not hasEnoughMana(job.spell) then
-        print("Not enough mana for: " .. job.spell)
+    if not hasEnoughMana(job.name) then
+        print("Not enough mana for: " .. job.name)
         return
     end
     self:srlCast(job)
@@ -133,14 +143,16 @@ end
 
 function CastService:srlCast(job)
     Logging.Debug("Cast Util Export SRL Cast Start")
-    local isSpellReady = self.isCasting and mq.TLO.Cast.Ready(job.spell)
-    Logging.Debug(("Is spell ready %s --- %s "):format(job.spell, isSpellReady))
+    local isSpellReady = mq.TLO.Cast.Ready(job.name)
+    Logging.Debug(("Is spell ready %s --- %s "):format(job.name, isSpellReady))
     if(isSpellReady) then
         Target:getTargetById(job.targetId)
         --param gems
         --need to stop moving as well
-        local castTime = mq.TLO.Spell(job.spell).CastTime.TotalSeconds() * 1000 + 1500
-        mq.cmdf("/casting \"%s\"|%s", job.spell, job.gem)
+        mq.cmd("/stick off");
+        mq.cmd("/afollow off")
+        local castTime = mq.TLO.Spell(job.name).CastTime.TotalSeconds() * 1000 + 1500
+        mq.cmdf("/casting \"%s\"|%s", job.name, job.gem)
         mq.delay(castTime)
         local result = mq.TLO.Cast.Result()
         return result

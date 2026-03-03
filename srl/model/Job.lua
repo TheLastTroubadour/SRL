@@ -2,19 +2,22 @@ local Job = {}
 local mq = require 'mq'
 Job.__index = Job
 
+-- Job.lua
+local Job = {}
+Job.__index = Job
 
-
-function Job:new(target, spell, type, generation, iniLine, gem)
+function Job:new(targetId, targetName, name, type, priority, gem)
     local self = setmetatable({}, Job)
 
-    self.target = target
-    local spawnSearch = 'pc ' .. target
-    self.targetId = mq.TLO.Spawn(spawnSearch).ID
-    self.spell = spell
-    self.type = type
-    self.generation = generation
-    self.iniLine = iniLine
-    self.gem = gem or 8
+    self.targetId = targetId
+    self.targetName = targetName
+    self.name = name --name of spell/ability/aa
+    self.type     = type
+    self.priority = priority or 0
+    self.gem      = gem -- optional
+    self.generation = nil
+    -- Unique identity for duplicate protection
+    self.key = name .. ":" .. tostring(targetId)
 
     return self
 end

@@ -67,8 +67,8 @@ function CommandBus:init()
         mq.cmdf('/dgae /srlevent Follow id=%s sender=%s', mq.TLO.Target.ID(), mq.TLO.Me.Name())
     end)
 
-    mq.unbind('/stop')
-    mq.bind('/stop', function(...)
+    mq.unbind('/srlstop')
+    mq.bind('/srlstop', function(...)
         local args = { ... }
         local command = table.remove(args, 1)
         if not command then

@@ -7,7 +7,7 @@ Wrapper.__index = Wrapper
 
 function Wrapper:new(name)
     local self = setmetatable({}, Wrapper)
-
+    self.mailboxName = name
     local ok, actor = pcall(function()
         return actors.register(name)
     end)
@@ -23,6 +23,7 @@ function Wrapper:new(name)
         local function dispatcher(message)
             local data = message()
             local event = data.event
+            print("New Event: " .. event)
 
             if self.handlers[event] then
                 self.handlers[event](data.sender, data)
@@ -47,7 +48,7 @@ end
 
 function Wrapper:send(target, event, data)
     local name = mq.TLO.Me.Name()
-    self.actor:send({mailbox=target, script='srl'}, {
+    self.actor:send({character=target, mailbox=self.mailboxName, script='srl'}, {
         event = event,
         data = data,
         sender = name

@@ -13,6 +13,11 @@ end
 
 --Actual Follow Functionality
 function FollowService:follow(followId)
+
+    if (mq.TLO.Me.ID() == followId) then
+        --Don't follow the person who called for it
+        return
+    end
     --Use Switch or AdvFollow make a service?
     Logging.Debug("Movement.follow Start")
     mq.cmd("/stick off")
@@ -54,7 +59,7 @@ function FollowService:stopFollow()
     end
 end
 
-function FollowService:callStop()
+function FollowService:stop()
     mq.cmd("/stick off");
     mq.cmd("/afollow off")
 end

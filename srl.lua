@@ -68,13 +68,14 @@ local function mainLoop()
 
     local layeredDefaults = buildDefaults(config.data)
     config.defaults = layeredDefaults
+    config:Load()
 
     local scheduler = Scheduler:new()
     local castService = CastService:new(scheduler)
-    local busService = Bus:new(mq.TLO.Me.Name())
+    local busService = Bus:new("SRL")
     castService:setBus(busService)
     BufferController:new(busService)
-    local combatService = CombatService:new(castService)
+    local combatService = CombatService:new(castService, config)
     BindService:new(combatService)
     castService.combatService = combatService
     local combatController = CombatController:new(combatService)
