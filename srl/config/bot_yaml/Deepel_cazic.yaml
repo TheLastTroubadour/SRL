@@ -1,0 +1,34 @@
+---
+_version: 1
+Buffs:
+  InstantBuff: []
+  SelfBuff: []
+  BotBuff: []
+  CombatBuff: []
+  GroupBuff: []
+AssistSettings:
+  meleeStickDistance: 15
+  meleeStickPoint: Behind
+  rangedDistance: 100
+  AutoAssistEngagePercent: 98
+  enabled: 'true'
+  type: melee
+Nukes:
+  Main:
+  - spell: Blast of Cold
+    gem: 2
+General:
+  debugLevel: 'off'
+LifeSupport: []
+SwapItems:
+  Main: ''
+UseItems:
+  Shrink: ''
+Burn:
+  LongBurn: []
+  FullBurn: []
+  QuickBurn: []
+Aura:
+  CastAura: false
+  Aura: []
+...
