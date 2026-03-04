@@ -20,8 +20,172 @@ local PackageMan = require('mq/PackageMan')
 local TableUtil = require 'srl.util.TableUtil'
 local FollowController = require 'srl.controller.FollowController'
 local FollowService = require 'srl.service.FollowService'
+local ImGui = require 'ImGui'
+local DEBUG = true
+local State = require 'srl.core.State'
+local HealService = require 'srl.service.HealService'
 PackageMan.Require('lyaml')
 PackageMan.Require('luafilesystem', 'lfs')
+
+local function DrawDebugWindow(castService, buffService, healService)
+
+    ImGui.SetNextWindowSize(600,500,ImGuiCond_FirstUseEver)
+
+    if ImGui.Begin("Combat Debug") then
+
+        DEBUG = ImGui.Checkbox("Debug Enabled", DEBUG)
+
+        ImGui.Separator()
+
+        if DEBUG then
+
+            if State and State.assist then
+                ImGui.Text("Assist Generation: "..tostring(State.assist.generation))
+            else
+                ImGui.Text("Assist Generation: nil")
+            end
+
+            if castService and castService.currentlyInFlight then
+                ImGui.Text("In Flight: "..tostring(castService.currentlyInFlight.spell))
+            else
+                ImGui.Text("In Flight: None")
+            end
+
+            ImGui.Separator()
+            ImGui.Text("Queue")
+            ImGui.BeginChild("QueueList", 0, 150, true)
+            if castService and castService.queue then
+                    if #castService.queue == 0 then
+                        ImGui.Text("Queue Empty")
+                    end
+
+                    for i, job in ipairs(castService.queue) do
+                        ImGui.Text(string.format(
+                                "%d) Spell: %s | T:%s | P:%s | G:%s",
+                                i,
+                                tostring(job.name),
+                                tostring(job.targetId),
+                                tostring(job.priority),
+                                tostring(job.generation)
+                        ))
+                    end
+
+            end
+            ImGui.EndChild()
+            ImGui.Separator()
+            ImGui.Text("Buff Service")
+
+            if buffService then
+
+                ImGui.Text("Requested Polls: ".. #buffService.requested)
+                ImGui.Text("Cooldowns: ".. #buffService.cooldowns)
+                ImGui.Text("Next Checks: ".. #buffService.nextCheck)
+
+                ImGui.Separator()
+
+                ImGui.BeginChild("BuffRequests", 0, 120, true)
+
+                ImGui.Text("Buff Requests Outbound")
+                if(buffService.requested) then
+                    for k, v in pairs(buffService.requested) do
+                        ImGui.Text("Polling: "..tostring(k))
+                    end
+                end
+                ImGui.EndChild()
+
+                ImGui.Separator()
+
+                ImGui.Text("Cooldown Display")
+
+                ImGui.BeginChild("BuffCooldowns", 0, 120, true)
+
+                if(buffService.cooldowns) then
+                    local now = mq.gettime()
+
+                    for k, v in pairs(buffService.cooldowns) do
+                        local remaining = math.max(0, v - now)
+                        ImGui.Text(string.format(
+                                "%s | cooldown: %.2fs",
+                                tostring(k),
+                                remaining/1000
+                        ))
+                    end
+                end
+                ImGui.EndChild()
+
+                  ImGui.Separator()
+
+                ImGui.Text("NextChecks Display")
+                ImGui.BeginChild("BuffNextChecks", 0, 120, true)
+
+                local now = mq.gettime()
+
+                if buffService.nextCheck then
+                    for k, v in pairs(buffService.nextCheck) do
+                        local remaining = math.max(0, v - now)
+
+                        ImGui.Text(string.format(
+                                "%s | next in %.2fs",
+                                tostring(k),
+                                remaining / 1000
+                        ))
+                    end
+                else
+                    ImGui.Text("No NextChecks")
+                end
+
+                ImGui.EndChild()
+            end
+            ImGui.Separator()
+            ImGui.Text("Heal Service")
+
+            if healService then
+
+                local targets = healService:collectTargets()
+                local total = 0
+
+                for _,t in ipairs(targets) do
+                    total = total + t.hp
+                end
+
+                local avg = 100
+                if #targets > 0 then
+                    avg = total / #targets
+                end
+
+                ImGui.Text(string.format("Group Average HP: %.1f", avg))
+
+                ImGui.Separator()
+
+                ImGui.Text("Targets")
+
+                ImGui.BeginChild("HealTargets", 0, 150, true)
+
+                for _,t in ipairs(targets) do
+
+                    local locked = healService:healLocked(t.id)
+
+                    ImGui.Text(string.format(
+                            "%s | HP:%d | Role:%s | Locked:%s",
+                            t.name,
+                            t.hp,
+                            t.role,
+                            tostring(locked)
+                    ))
+
+                end
+
+                ImGui.EndChild()
+
+            end
+        else
+            ImGui.Text("Debug Disabled")
+        end
+
+    end
+
+    ImGui.End()
+end
 
 local function merge(a, b)
     for k, v in pairs(b) do
@@ -87,6 +251,7 @@ local function mainLoop()
 
     local followService = FollowService:new()
     local followController = FollowController:new(followService)
+    local healService = HealService:new(castService, config)
 
     CommandBus:register('Follow', function(payload)
         followController:follow(payload)
@@ -94,6 +259,16 @@ local function mainLoop()
 
     CommandBus:register('Stop', function(payload)
         followController:stop()
+    end)
+
+    mq.imgui.init("CombatDebugUI", function()
+        local ok, err = pcall(function()
+            DrawDebugWindow(castService, buffService, healService)
+        end)
+
+        if not ok then
+            print("UI Error:", err)
+        end
     end)
 
     while true do
@@ -104,9 +279,10 @@ local function mainLoop()
         --resume any coroutines waiting on await
         scheduler:run()
 
+        healService:update()
         buffService:update()
         combatService:update()
-        mq.delay(100)
+        mq.delay(50)
 
         Logging.Debug("Main While loop End")
     end

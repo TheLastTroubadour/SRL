@@ -84,7 +84,7 @@ function CastService:performCast(job)
 
     local result
 
-    if job.type == "spell" then
+    if job.type == "spell" or job.type == "heal" then
         result = self:castSpell(job)
     elseif job.type == "aa" then
         result = self:castAA(job)

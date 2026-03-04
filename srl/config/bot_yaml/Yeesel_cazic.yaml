@@ -1,5 +1,47 @@
 ---
+Burn:
+  QuickBurn: []
+  LongBurn: []
+  FullBurn: []
+Aura:
+  CastAura: false
+  Aura: []
+Heals:
+  Spells:
+    normal:
+    - gem: 1
+      priority: 400
+      spell: Minor Healing
+      threshold: 50
+    tank:
+    - gem: 1
+      priority: 450
+      spell: Minor Healing
+      threshold: 80
+    important:
+    - gem: 1
+      priority: 430
+      spell: Minor Healing
+      threshold: 70
+  ImportantBot:
+  - Yeesel
+  - Ceepa
+  Tanks:
+  - Weetel
+AssistSettings:
+  enabled: 'false'
+  meleeStickDistance: 15
+  meleeStickPoint: Behind
+  rangedDistance: 100
+  AutoAssistEngagePercent: 98
+  type: melee
+UseItems:
+  Shrink: ''
 Buffs:
+  InstantBuff: []
+  SelfBuff:
+  - spell: Courage
+    gem: 2
   BotBuff:
   - gem: 2
     charactersToBuff:
@@ -10,30 +52,10 @@ Buffs:
     spell: Courage
   CombatBuff: []
   GroupBuff: []
-  InstantBuff: []
-  SelfBuff:
-  - gem: 2
-    spell: Courage
-AssistSettings:
-  rangedDistance: 100
-  AutoAssistEngagePercent: 98
-  enabled: 'false'
-  type: melee
-  meleeStickDistance: 15
-  meleeStickPoint: Behind
-_version: 1
 General:
   debugLevel: 'off'
+_version: 1
 SwapItems:
   Main: ''
-UseItems:
-  Shrink: ''
-Burn:
-  QuickBurn: []
-  LongBurn: []
-  FullBurn: []
-Aura:
-  Aura: []
-  CastAura: false
 LifeSupport: []
 ...
