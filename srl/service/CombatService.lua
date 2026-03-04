@@ -15,8 +15,6 @@ function CombatService:new(castService, config)
         abilityRotation = self:getAbilitiesFromKey('Abilities')
     }
 
-    print(#self.rotation.spellRotation)
-    print(#self.rotation.abilityRotation)
     return self
 end
 
@@ -69,8 +67,6 @@ function CombatService:assist()
         self.castService:clearCombatQueue()
     end
 
-    print("Calling assist")
-
     if(State.assist.sender == mq.TLO.Me.Name()) then
         return
     end
@@ -93,8 +89,6 @@ function CombatService:update()
         --If was following someone resume follow?
         --Next Target or Wait for Call
     end
-
-    print("Combat Update")
 
     for _, entry in ipairs(self.rotation.spellRotation) do
         if self:canUse(entry) then

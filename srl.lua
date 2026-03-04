@@ -29,7 +29,7 @@ PackageMan.Require('luafilesystem', 'lfs')
 
 local function DrawDebugWindow(castService, buffService, healService)
 
-    ImGui.SetNextWindowSize(600,500,ImGuiCond_FirstUseEver)
+    ImGui.SetNextWindowSize(600, 500, ImGuiCond_FirstUseEver)
 
     if ImGui.Begin("Combat Debug") then
 
@@ -40,13 +40,13 @@ local function DrawDebugWindow(castService, buffService, healService)
         if DEBUG then
 
             if State and State.assist then
-                ImGui.Text("Assist Generation: "..tostring(State.assist.generation))
+                ImGui.Text("Assist Generation: " .. tostring(State.assist.generation))
             else
                 ImGui.Text("Assist Generation: nil")
             end
 
             if castService and castService.currentlyInFlight then
-                ImGui.Text("In Flight: "..tostring(castService.currentlyInFlight.spell))
+                ImGui.Text("In Flight: " .. tostring(castService.currentlyInFlight.spell))
             else
                 ImGui.Text("In Flight: None")
             end
@@ -55,20 +55,20 @@ local function DrawDebugWindow(castService, buffService, healService)
             ImGui.Text("Queue")
             ImGui.BeginChild("QueueList", 0, 150, true)
             if castService and castService.queue then
-                    if #castService.queue == 0 then
-                        ImGui.Text("Queue Empty")
-                    end
+                if #castService.queue == 0 then
+                    ImGui.Text("Queue Empty")
+                end
 
-                    for i, job in ipairs(castService.queue) do
-                        ImGui.Text(string.format(
-                                "%d) Spell: %s | T:%s | P:%s | G:%s",
-                                i,
-                                tostring(job.name),
-                                tostring(job.targetId),
-                                tostring(job.priority),
-                                tostring(job.generation)
-                        ))
-                    end
+                for i, job in ipairs(castService.queue) do
+                    ImGui.Text(string.format(
+                            "%d) Spell: %s | T:%s | P:%s | G:%s",
+                            i,
+                            tostring(job.name),
+                            tostring(job.targetId),
+                            tostring(job.priority),
+                            tostring(job.generation)
+                    ))
+                end
 
             end
             ImGui.EndChild()
@@ -77,18 +77,18 @@ local function DrawDebugWindow(castService, buffService, healService)
 
             if buffService then
 
-                ImGui.Text("Requested Polls: ".. #buffService.requested)
-                ImGui.Text("Cooldowns: ".. #buffService.cooldowns)
-                ImGui.Text("Next Checks: ".. #buffService.nextCheck)
+                ImGui.Text("Requested Polls: " .. #buffService.requested)
+                ImGui.Text("Cooldowns: " .. #buffService.cooldowns)
+                ImGui.Text("Next Checks: " .. #buffService.nextCheck)
 
                 ImGui.Separator()
 
                 ImGui.BeginChild("BuffRequests", 0, 120, true)
 
                 ImGui.Text("Buff Requests Outbound")
-                if(buffService.requested) then
+                if (buffService.requested) then
                     for k, v in pairs(buffService.requested) do
-                        ImGui.Text("Polling: "..tostring(k))
+                        ImGui.Text("Polling: " .. tostring(k))
                     end
                 end
                 ImGui.EndChild()
@@ -99,7 +99,7 @@ local function DrawDebugWindow(castService, buffService, healService)
 
                 ImGui.BeginChild("BuffCooldowns", 0, 120, true)
 
-                if(buffService.cooldowns) then
+                if (buffService.cooldowns) then
                     local now = mq.gettime()
 
                     for k, v in pairs(buffService.cooldowns) do
@@ -107,13 +107,13 @@ local function DrawDebugWindow(castService, buffService, healService)
                         ImGui.Text(string.format(
                                 "%s | cooldown: %.2fs",
                                 tostring(k),
-                                remaining/1000
+                                remaining / 1000
                         ))
                     end
                 end
                 ImGui.EndChild()
 
-                  ImGui.Separator()
+                ImGui.Separator()
 
                 ImGui.Text("NextChecks Display")
                 ImGui.BeginChild("BuffNextChecks", 0, 120, true)
@@ -144,7 +144,7 @@ local function DrawDebugWindow(castService, buffService, healService)
                 local targets = healService:collectTargets()
                 local total = 0
 
-                for _,t in ipairs(targets) do
+                for _, t in ipairs(targets) do
                     total = total + t.hp
                 end
 
@@ -161,7 +161,7 @@ local function DrawDebugWindow(castService, buffService, healService)
 
                 ImGui.BeginChild("HealTargets", 0, 150, true)
 
-                for _,t in ipairs(targets) do
+                for _, t in ipairs(targets) do
 
                     local locked = healService:healLocked(t.id)
 
@@ -176,6 +176,66 @@ local function DrawDebugWindow(castService, buffService, healService)
                 end
 
                 ImGui.EndChild()
+
+                ImGui.Separator()
+                ImGui.Text("Heal Spell Selection")
+
+                local targets = healService:collectTargets()
+
+                ImGui.BeginChild("HealSpellEval", 0, 120, true)
+
+                for _, t in ipairs(targets) do
+
+                    local heal = healService:selectHealSpell(t)
+
+                    if heal then
+                        ImGui.Text(string.format(
+                                "%s → %s (threshold %d)",
+                                t.name,
+                                heal.spell,
+                                heal.threshold
+                        ))
+                    else
+                        ImGui.Text(string.format(
+                                "%s → no heal",
+                                t.name
+                        ))
+                    end
+
+                end
+
+                ImGui.EndChild()
+
+                ImGui.Separator()
+                ImGui.Text("Heal Decision")
+
+                local targets = healService:collectTargets()
+                local best = healService:selectBestTarget(targets)
+
+                if best then
+
+                    local heal = healService:selectHealSpell(best)
+
+                    ImGui.Text(string.format(
+                            "Chosen Target: %s",
+                            best.name
+                    ))
+
+                    ImGui.Text(string.format(
+                            "HP: %d",
+                            best.hp
+                    ))
+
+                    if heal then
+                        ImGui.Text(string.format(
+                                "Spell: %s",
+                                heal.spell
+                        ))
+                    end
+
+                else
+                    ImGui.Text("No heal needed")
+                end
 
             end
         else
@@ -287,7 +347,5 @@ local function mainLoop()
         Logging.Debug("Main While loop End")
     end
 end
-
-
 
 mainLoop();
