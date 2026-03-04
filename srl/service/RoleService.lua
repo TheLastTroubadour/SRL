@@ -59,11 +59,11 @@ function RoleService:getRoles()
     end
 
     if CASTER_CLASSES[classShortName] then
-        roles.casters = 'caster'
+        roles.caster = 'caster'
     end
 
     if HEALER_CLASSES[classShortName] then
-        roles.healers = 'healers'
+        roles.healer = 'healer'
     end
 
     if DEBUFF_CLASSES[classShortName] then

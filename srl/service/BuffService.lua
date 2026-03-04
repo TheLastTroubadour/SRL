@@ -112,7 +112,7 @@ function BuffService:processCategory(category, inCombat)
 end
 
 function BuffService:getBuffInformationForKey(key)
-    local values = self.config:Get(key)
+    local values = self.config:get(key)
     local jobList = {}
     if values then
         for _, v in ipairs(values) do

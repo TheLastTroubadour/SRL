@@ -14,10 +14,10 @@ function HealService:new(castService, config)
     self.healLocks = {}
     self.groupHealLock = 0
 
-    self.healSpells = config:Get("Heals.Spells") or {}
+    self.healSpells = config:get("Heals.Spells") or {}
 
-    self.tanks = config:Get("Heals.Tanks") or {}
-    self.importantBots = config:Get("Heals.ImportantBots") or {}
+    self.tanks = config:get("Heals.Tanks") or {}
+    self.importantBots = config:get("Heals.ImportantBots") or {}
 
     if(#self.healSpells > 0) then
         for _,roleSpells in pairs(self.healSpells) do
@@ -150,8 +150,8 @@ function HealService:checkGroupHeal(targets, now)
 
     local avg = total / #targets
 
-    local threshold = self.config:Get("Heals.GroupThreshold") or 65
-    local spell = self.config:Get("Heals.GroupSpell")
+    local threshold = self.config:get("Heals.GroupThreshold") or 65
+    local spell = self.config:get("Heals.GroupSpell")
 
     if avg <= threshold and spell then
 

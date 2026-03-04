@@ -1,131 +1,289 @@
-local mq = require('mq')
-local yaml = require('lyaml')
-local TableUtil = require 'srl.util.TableUtil'
-local Config = {}
+local mq = require("mq")
+local yaml = require("lyaml")
 local LFS = require 'lfs'
-local VERSION = 1
+local TableUtil = require 'srl.util.TableUtil'
+local Class = require 'srl.config.defaults.Class'
+local Role = require 'srl.config.defaults.Role'
+local Defaults = require 'srl.config.defaults.Base'
+local RoleService = require 'srl.service.RoleService'
 
-Config.__index = Config
-local migrations = {}
+local ConfigService = {}
+ConfigService.__index = ConfigService
 
----------------------------------------------------
+-------------------------------------------------
 -- Constructor
 -------------------------------------------------
-function Config:new(defaults)
-    local obj = setmetatable({}, self)
 
-    obj.defaults = defaults or {}
-    obj.data = {}
-    obj.file = nil
-    obj.loaded = false
+function ConfigService:new(eventBus)
 
-    return obj
+    local self = setmetatable({}, ConfigService)
+
+    self.eventBus = eventBus
+
+    self.roleOrder = {}
+
+    self.resolved = {}
+
+    self.watchFiles = {}
+
+    self.schema = nil
+
+    self.characterName = mq.TLO.Me.Name()
+    self.comments = require 'srl.config.defaults.Comment'
+    self.path = mq.TLO.Lua.Dir() .. "\\srl\\config\\bot_yaml\\"
+    self.fileName = self.characterName .. "_" .. mq.TLO.EverQuest.Server() .. ".yaml"
+
+    return self
 end
 
--------------------------------------------------
--- File path (per character + server)
--------------------------------------------------
-function Config:buildFile()
-    local name = mq.TLO.Me.Name() or "Unknown"
-    local server = mq.TLO.EverQuest.Server() or "Unknown"
-
-    return string.format(
-            "%s\\srl\\config\\bot_yaml\\%s_%s.yaml",
-            mq.TLO.Lua.Dir(),
-            name,
-            server
-    )
-end
-
--------------------------------------------------
--- Deep merge (IMPORTANT)
--------------------------------------------------
-local function mergeDefaults(defaults, data)
-    for k, v in pairs(defaults) do
-        if type(v) == "table" then
-            if type(data[k]) ~= "table" then
-                data[k] = {}
-            end
-            mergeDefaults(v, data[k])
-        elseif data[k] == nil then
-            data[k] = v
-        end
-    end
-end
-
--------------------------------------------------
--- Ensure directory exists
--------------------------------------------------
 local function ensureDirectory(path)
     local attr = LFS.attributes(path)
     if not attr then
         LFS.mkdir(path)
-        end
-end
-
--------------------------------------------------
--- Load
--------------------------------------------------
-function Config:Load()
-    if self.loaded then
-        return
     end
-
-    self.file = self:buildFile()
-    ensureDirectory(mq.TLO.Lua.Dir() .. "\\srl\\config\\bot_yaml")
-
-    local f = io.open(self.file, "r")
-
-    if f then
-        local content = f:read("*a")
-        f:close()
-        self.data = yaml.load(content) or {}
-    else
-        self.data = {}
-    end
-
-    -- merge defaults safely
-    mergeDefaults(self.defaults, self.data)
-    self:runMigrations()
-
-    self:Save() -- ensure new defaults persist
-    self.loaded = true
 end
+-------------------------------------------------
+-- Deep Merge
+-------------------------------------------------
 
-function Config:runMigrations()
-    local fileVersion = self.data._version or 1
+local function deepMerge(dest, src)
 
-    if(Config._version) then
-        if fileVersion < Config._version then
-            for v = fileVersion + 1, Config.VERSION do
-                if migrations[v] then
-                    migrations[v](self.data)
-                end
+    for k,v in pairs(src) do
+
+        if type(v) == "table" then
+
+            if type(dest[k]) ~= "table" then
+                dest[k] = {}
             end
 
-            self.data._version = Config.VERSION
+            deepMerge(dest[k], v)
+
+        else
+            dest[k] = v
         end
+
     end
+
 end
 
+-------------------------------------------------
+-- YAML Ordered Writer
+-------------------------------------------------
+
+local function writeYamlTable(file, tbl, comments, indent)
+
+    indent = indent or 0
+
+    local spacing = string.rep(" ", indent)
+
+    for key,value in pairs(tbl) do
+
+        local comment = comments and comments[key]
+
+        --------------------------------
+        -- Print comment
+        --------------------------------
+
+        if type(comment) == "string" then
+            file:write(spacing.."# "..comment.."\n")
+        end
+
+        --------------------------------
+        -- Nested table
+        --------------------------------
+
+        if type(value) == "table" then
+
+            file:write(spacing..key..":\n")
+
+            local childComments = type(comment) == "table" and comment or nil
+
+            writeYamlTable(
+                    file,
+                    value,
+                    childComments,
+                    indent + 2
+            )
+
+        else
+
+            file:write(spacing..key..": "..tostring(value).."\n")
+
+        end
+
+    end
+
+end
 
 -------------------------------------------------
--- Save
+-- File Timestamp
 -------------------------------------------------
-function Config:Save()
-    local f = io.open(self.file, "w")
-    if not f then
+
+local function fileModified(path)
+
+    local p = io.popen('stat -c %Y "'..path..'"')
+
+    if not p then return 0 end
+
+    local t = tonumber(p:read("*a")) or 0
+
+    p:close()
+
+    return t
+end
+
+-------------------------------------------------
+-- Watch File
+-------------------------------------------------
+
+function ConfigService:watch(path)
+
+    self.watchFiles[path] = fileModified(path)
+
+end
+
+-------------------------------------------------
+-- Load Character YAML
+-------------------------------------------------
+
+function ConfigService:loadCharacterYaml()
+
+    local path = self.path .. self.fileName
+
+    local file = io.open(path,"r")
+
+    if not file then
+        print("Load Character Yaml failed")
         return
     end
-    f:write(yaml.dump({self.data}))
-    f:close()
+
+
+    self.resolved = yaml.load(file:read("*a")) or {}
+
+    file:close()
+
+    self:watch(path)
+
 end
 
 -------------------------------------------------
--- Get (dot path supported)
+-- Generate YAML First Run
 -------------------------------------------------
-function Config:Get(path)
-    local node = self.data
+
+function ConfigService:generateCharacterYaml()
+
+
+    local path = self.path .. self.fileName
+
+    local readOnly = io.open(path, 'r')
+
+    if readOnly then
+        readOnly:close()
+        return
+    else
+        ensureDirectory(self.path)
+    end
+
+        print("Generating character config")
+
+        local merged = {}
+
+        --------------------------------
+        -- defaults
+        --------------------------------
+
+        deepMerge(merged, Defaults)
+
+        --------------------------------
+        -- roles
+        --------------------------------
+
+        local roles = RoleService:getRoles()
+
+        for _, v in pairs(roles) do
+            if Role[v] then
+                deepMerge(merged, Role[v])
+            end
+
+        end
+
+        --class
+        local classShortName = mq.TLO.Me.Class.ShortName()
+        if Class[classShortName] then
+            deepMerge(merged, Class[classShortName])
+        end
+
+        --------------------------------
+        -- write yaml
+        --------------------------------
+        local f = io.open(path,"w")
+
+        f:write("# Character Configuration\n")
+        --------------------------------
+        -- write config
+        --------------------------------
+
+        writeYamlTable(
+                f,
+                merged,
+                self.comments,
+                0
+        )
+
+        f:close()
+
+        self.resolved = merged
+
+    end
+
+-------------------------------------------------
+-- Runtime Override
+-------------------------------------------------
+
+function ConfigService:setRuntime(path,value)
+
+    local node = self.layers.runtime
+
+    local parts = {}
+
+    for p in self.path:gmatch("[^%.]+") do
+        table.insert(parts,p)
+    end
+
+    for i=1,#parts-1 do
+
+        local part = parts[i]
+
+        node[part] = node[part] or {}
+
+        node = node[part]
+
+    end
+
+    node[parts[#parts]] = value
+
+end
+
+-------------------------------------------------
+-- Build Final Config
+-------------------------------------------------
+
+function ConfigService:build()
+
+    if self.schema then
+        self:validate()
+    end
+
+end
+
+-------------------------------------------------
+-- Dot Path Access
+-------------------------------------------------
+
+function ConfigService:get(path)
+
+    local node = self.resolved
+
     for key in string.gmatch(path, "[^.]+") do
         node = node[key]
         if not node then
@@ -136,50 +294,143 @@ function Config:Get(path)
 end
 
 -------------------------------------------------
--- Set
+-- Schema Validation
 -------------------------------------------------
-function Config:Set(path, value)
-    local node = self.data
-    local keys = {}
 
-    for key in string.gmatch(path, "[^.]+") do
-        table.insert(keys, key)
-    end
+function ConfigService:setSchema(schema)
 
-    for i = 1, #keys - 1 do
-        node = node[keys[i]]
-        if not node then
-            return
+    self.schema = schema
+
+end
+
+function ConfigService:validate()
+
+    local errors = {}
+
+    for path,rules in pairs(self.schema) do
+
+        local value = self:get(path)
+
+        if rules.required and value == nil then
+            table.insert(errors,"Missing config: "..path)
         end
+
+        if value ~= nil then
+
+            if rules.type == "number" and type(value) ~= "number" then
+                table.insert(errors,path.." must be number")
+            end
+
+            if rules.type == "string" and type(value) ~= "string" then
+                table.insert(errors,path.." must be string")
+            end
+
+        end
+
     end
 
-    node[keys[#keys]] = value
+    if #errors > 0 then
+
+        print("CONFIG VALIDATION FAILED")
+
+        for _,e in ipairs(errors) do
+            print(e)
+        end
+
+        error("Invalid Config")
+
+    end
+
 end
 
 -------------------------------------------------
--- Migration: 1 → 2
+-- YAML Patch
 -------------------------------------------------
-migrations[2] = function(data)
-    -- Example: rename combat.assistType → combat.assist.type
 
-    if data.combat and data.combat.assistType then
-        data.combat.assist = data.combat.assist or {}
-        data.combat.assist.type = data.combat.assistType
-        data.combat.assistType = nil
+function ConfigService:patchYamlValue(key,value)
+
+    local path = self.path .. self.characterName..".yaml"
+
+    local lines = {}
+
+    for line in io.lines(path) do
+        table.insert(lines,line)
     end
+
+    local replaced = false
+
+    for i,line in ipairs(lines) do
+
+        if line:match("^"..key..":") then
+
+            lines[i] = key..": "..tostring(value)
+
+            replaced = true
+
+        end
+
+    end
+
+    if not replaced then
+        table.insert(lines,key..": "..tostring(value))
+    end
+
+    local file = io.open(path,"w")
+
+    for _,l in ipairs(lines) do
+        file:write(l.."\n")
+    end
+
+    file:close()
+
 end
 
 -------------------------------------------------
--- Migration: 2 → 3
+-- Reload Check
 -------------------------------------------------
-migrations[3] = function(data)
-    -- Example: add assist.percent if missing
-    data.combat = data.combat or {}
-    data.combat.assist = data.combat.assist or {}
 
-    if data.combat.assist.percent == nil then
-        data.combat.assist.percent = 99
+function ConfigService:update()
+
+    local changed = false
+
+    for path,last in pairs(self.watchFiles) do
+
+        local modified = fileModified(path)
+
+        if modified > last then
+
+            print("Config changed:",path)
+
+            self.watchFiles[path] = modified
+
+            changed = true
+
+        end
+
     end
+
+    if changed then
+        self:reload()
+    end
+
 end
 
-return Config
+-------------------------------------------------
+-- Reload
+-------------------------------------------------
+
+function ConfigService:reload()
+
+    print("Reloading config")
+
+    self:loadCharacterYaml(self.characterName)
+
+    self:build()
+
+    if self.eventBus then
+        self.eventBus:emit("config.changed",self.resolved)
+    end
+
+end
+
+return ConfigService

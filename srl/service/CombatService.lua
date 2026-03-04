@@ -2,6 +2,7 @@ local mq = require 'mq'
 local CombatService = {}
 local State = require 'srl.core.State'
 local Job = require 'srl.model.Job'
+local TableUtil = require 'srl.util.TableUtil'
 CombatService.__index = CombatService
 
 function CombatService:new(castService, config)
@@ -18,13 +19,23 @@ function CombatService:new(castService, config)
     return self
 end
 
+function CombatService:getSpellRotation()
+    return self.rotation.spellRotation
+end
+
+function CombatService:getAbilityRotation()
+    return self.rotation.abilityRotation
+end
+
+
+
 function CombatService:getAbilitiesFromKey(key)
-    local values = self.config:Get(key)
+    local values = self.config:get(key)
     local jobList = {}
     if values then
         for _, v in ipairs(values) do
-            local abilityName = v.ability
-            local job = Job:new(nil, nil, abilityName, 'ability', 50, nil)
+            local abilityName = v.Ability
+            local job = Job:new(nil, nil, tostring(abilityName), 'ability', 50, nil)
             table.insert(jobList, job)
         end
 
@@ -34,7 +45,7 @@ function CombatService:getAbilitiesFromKey(key)
 end
 
 function CombatService:getNukesFromKey(key)
-    local values = self.config:Get(key)
+    local values = self.config:get(key)
     local jobList = {}
     if values then
         for _, v in ipairs(values) do

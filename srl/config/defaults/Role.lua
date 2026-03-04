@@ -1,16 +1,14 @@
-
 return {
     melee = {
-        MeleeAbilities = {
-        }
-    },
-
-    tank = {
-        MeleeAbilities = {
+        Abilities = {
+            Ability = ''
         }
     },
 
     caster = {
+        AssistSettings = {
+            type = "Off"
+        },
         Nukes = {
             Main = {
 
@@ -18,6 +16,9 @@ return {
         }
     },
     healer = {
+        AssistSettings = {
+            type = "Off"
+        },
         Heals = {
             Main = {
                 Tanks = {
@@ -26,7 +27,7 @@ return {
                 ImportantBots = {
 
                 },
-                XTargets ={
+                XTargets = {
 
                 },
                 PetOwners = {

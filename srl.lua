@@ -27,9 +27,9 @@ local HealService = require 'srl.service.HealService'
 PackageMan.Require('lyaml')
 PackageMan.Require('luafilesystem', 'lfs')
 
-local function DrawDebugWindow(castService, buffService, healService)
+local function DrawDebugWindow(castService, buffService, healService, combatService)
 
-    ImGui.SetNextWindowSize(600, 500, ImGuiCond_FirstUseEver)
+    ImGui.SetNextWindowSize(400, 300, ImGuiCond_FirstUseEver)
 
     if ImGui.Begin("Combat Debug") then
 
@@ -136,6 +136,48 @@ local function DrawDebugWindow(castService, buffService, healService)
 
                 ImGui.EndChild()
             end
+
+            ImGui.Separator()
+            ImGui.Text("Combat Service")
+
+            if(combatService) then
+
+                ImGui.Text("Abilities")
+                ImGui.BeginChild("Ability Rotation")
+                local abilityRotation = combatService:getAbilityRotation()
+               for _, t in ipairs(abilityRotation) do
+
+
+                    ImGui.Text(string.format(
+                            "%s",
+                            t.name
+                    ))
+
+                end
+
+                ImGui.EndChild()
+
+                ImGui.Separator()
+
+                ImGui.Text("NukeRotation")
+                ImGui.BeginChild("Nuke Rotation")
+                    local nukeRotation = combatService:getSpellRotation()
+               for _, t in ipairs(nukeRotation) do
+
+
+                    ImGui.Text(string.format(
+                            "%s | %s",
+                            t.name,
+                            t.gem
+                    ))
+
+                end
+
+                ImGui.EndChild()
+
+            end
+
+
             ImGui.Separator()
             ImGui.Text("Heal Service")
 
@@ -247,52 +289,15 @@ local function DrawDebugWindow(castService, buffService, healService)
     ImGui.End()
 end
 
-local function merge(a, b)
-    for k, v in pairs(b) do
-        if type(v) == "table" then
-            a[k] = a[k] or {}
-            merge(a[k], v)
-        else
-            a[k] = v
-        end
-    end
-end
-
-local function buildDefaults()
-    local class = mq.TLO.Me.Class.ShortName()
-    local defaults = {}
-
-    -- 1️⃣ Base
-    merge(defaults, Base)
-
-    -- 2️⃣ Class
-    if Class[class] then
-        merge(defaults, Class[class])
-    end
-
-    -- 3️⃣ Multiple Roles
-    local roles = RoleService:getRoles()
-
-    for _, role in ipairs(roles) do
-        if Role[role] then
-            merge(defaults, Roles[role])
-        end
-    end
-
-    return defaults
-end
-
 -- MAIN MACRO LOOP
 local function mainLoop()
     Logging.Debug("Main Loop Start")
     init.setup();
 
-    local config = Config:new(Base)
-    config:Load()
+    local config = Config:new(nil)
 
-    local layeredDefaults = buildDefaults(config.data)
-    config.defaults = layeredDefaults
-    config:Load()
+    config:generateCharacterYaml()
+    config:loadCharacterYaml()
 
     local scheduler = Scheduler:new()
     local castService = CastService:new(scheduler)
@@ -323,7 +328,7 @@ local function mainLoop()
 
     mq.imgui.init("CombatDebugUI", function()
         local ok, err = pcall(function()
-            DrawDebugWindow(castService, buffService, healService)
+            DrawDebugWindow(castService, buffService, healService, combatService)
         end)
 
         if not ok then

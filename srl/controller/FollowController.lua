@@ -14,7 +14,8 @@ end
 function FollowController:follow(payload)
 
     State:setFollow(payload)
-
+    print("FollowController payload")
+    print(TableUtil.table_print(payload))
     self.followService:follow(payload.id)
 end
 

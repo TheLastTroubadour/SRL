@@ -1,34 +1,55 @@
----
-_version: 1
-Buffs:
-  InstantBuff: []
-  SelfBuff: []
-  BotBuff: []
-  CombatBuff: []
-  GroupBuff: []
+# Character Configuration
+UseItems:
+  Shrink: 
 AssistSettings:
+  enabled: true
   meleeStickDistance: 15
   meleeStickPoint: Behind
   rangedDistance: 100
   AutoAssistEngagePercent: 98
-  enabled: 'true'
-  type: melee
+  # (melee/ranged/off)
+  type: Off
+
+
+Aura:
+  Aura:
+
+  CastAura: false
+
+
+Buffs:
+  GroupBuff:
+  InstantBuff:
+  SelfBuff:
+  BotBuff:
+  CombatBuff:
+Wizard:
+  EvacSpell: 
+  AutoHarvest: false
+  Harvest:
+    spells:
+      spell: 
 Nukes:
   Main:
-  - spell: Blast of Cold
-    gem: 2
-General:
-  debugLevel: 'off'
-LifeSupport: []
+    - spell: 'Blast of Cold'
+      gem: 2
 SwapItems:
-  Main: ''
-UseItems:
-  Shrink: ''
+  Main: 
+
+
+_version: 1
+
+General:
+  debugLevel: off
+
+
+LifeSupport:
+
 Burn:
-  LongBurn: []
-  FullBurn: []
-  QuickBurn: []
-Aura:
-  CastAura: false
-  Aura: []
-...
+  QuickBurn:
+
+  LongBurn:
+
+  FullBurn:
+
+
