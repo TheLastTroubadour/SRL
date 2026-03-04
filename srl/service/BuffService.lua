@@ -21,7 +21,6 @@ function BuffService:new(bus, scheduler, combatService, castService, config)
     self.explicitRequests = {}
     self.bus = bus
     self.requested = {}     -- target:spell currently polling
-    self.queue = {}         -- cast queue
     self.cooldowns = {}     -- suppression timer
     self.nextCheck = {}   -- key → timestamp when next poll allowed
 
@@ -51,7 +50,10 @@ function BuffService:pollIfDue(target, spell)
     if self.requested[k] == true then
         return nil
     end
+
     self.requested[k] = true
+    --Prevent Immediate repoll
+    self.nextCheck[k] = now + 2000
 
     return self.bus:request(
             target,
@@ -143,9 +145,7 @@ function BuffService:handlePollPromise(target, buffEntry, promise)
         local k = key(target, buffEntry.name)
         local now = mq.gettime()
 
-        if reply then
-            self.requested[k] = nil
-        end
+        self.requested[k] = nil
 
 
         -- If promise failed (timeout)

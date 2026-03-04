@@ -26,8 +26,6 @@ function BufferController:register()
 end
 
 function BufferController:handleRequest(sender, data)
-    print("Data for Request:")
-    print(TableUtil.table_print(data))
     local spell = data.data.spell
     local buff = mq.TLO.Me.Buff(spell)
     local characterId = mq.TLO.Me.ID()

@@ -36,11 +36,21 @@ function CastService:startWorker()
     self.scheduler:spawn(function()
 
         while true do
-            if self.currentlyInFlight then
-                if not mq.TLO.Me.Casting() then
-                    self.currentlyInFlight = false
+            for i = #self.queue, 1, -1 do
+                local job = self.queue[i]
+                if job.generation then
+                    if job.generation ~= State.assist.generation then
+                        self.queuedKeys[job.key] = nil
+                        table.remove(self.queue, i)
+                    end
                 end
-                return
+            end
+
+            if self.currentlyInFlight
+                    and self.currentlyInFlight.generation
+                    and self.currentlyInFlight.generation ~= State.assist.generation then
+                -- Let cast finish naturally
+                self.currentlyInFlight = nil
             end
 
             if #self.queue == 0 then
@@ -53,15 +63,7 @@ function CastService:startWorker()
                 end
 
                 local job = table.remove(self.queue, 1)
-                -- Skip outdated combat jobs
-                if(State.assist.active) then
-                    if job.generation
-                            and job.generation ~= State.assist.generation
-                    then
-                        print("Skipping outdated job")
-                        return
-                    end
-                end
+
                 self.currentlyInFlight = job
                 self:performCast(job)
                 self.currentlyInFlight = nil
@@ -72,16 +74,12 @@ function CastService:startWorker()
 end
 
 function CastService:performCast(job)
-    -- announce cast start
-    -- Couldn't get broadcast to work
-    --[[
-    self.bus:broadcast("cast_started", {
+    self.bus:broadcast("cast_started " .. mq.TLO.Me.Name() .. "spell" .. job.name .. " targetId: " .. job.targetId, {
         caster = mq.TLO.Me.Name(),
-        spell = job.spell,
-        targetId = job.Id,
+        spell = job.name,
+        targetId = job.targetId,
         type = job.type
     })
-    --]]
 
 
     local result
@@ -99,14 +97,12 @@ function CastService:performCast(job)
     end
 
     -- announce completion
-    --[[
-    self.bus:broadcast("cast_finished", {
+    self.bus:broadcast("cast_finished " .. mq.TLO.Me.Name() .. "spell" .. job.name .. " targetId: " .. job.targetId, {
         caster = mq.TLO.Me.Name(),
-        spell = job.spell,
+        spell = job.name,
         targetId = job.targetId,
         success = result
     })
-    --]]
 
     return result
 end
@@ -129,7 +125,6 @@ local function hasEnoughMana(spellName)
 end
 
 function CastService:castAbility(job)
-    print("In Cast Ability")
     mq.cmdf('/doability %s', job.name)
 end
 
