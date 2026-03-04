@@ -14,7 +14,7 @@ end
 --Actual Follow Functionality
 function FollowService:follow(followId)
 
-    if (mq.TLO.Me.ID() == followId) then
+    if (tostring(mq.TLO.Me.ID() == followId)) then
         --Don't follow the person who called for it
         return
     end
