@@ -1,0 +1,39 @@
+---
+Buffs:
+  BotBuff:
+  - gem: 2
+    charactersToBuff:
+    - Ceepa
+    - Heezel
+    - Weetel
+    - Deepel
+    spell: Courage
+  CombatBuff: []
+  GroupBuff: []
+  InstantBuff: []
+  SelfBuff:
+  - gem: 2
+    spell: Courage
+AssistSettings:
+  rangedDistance: 100
+  AutoAssistEngagePercent: 98
+  enabled: 'false'
+  type: melee
+  meleeStickDistance: 15
+  meleeStickPoint: Behind
+_version: 1
+General:
+  debugLevel: 'off'
+SwapItems:
+  Main: ''
+UseItems:
+  Shrink: ''
+Burn:
+  QuickBurn: []
+  LongBurn: []
+  FullBurn: []
+Aura:
+  Aura: []
+  CastAura: false
+LifeSupport: []
+...
