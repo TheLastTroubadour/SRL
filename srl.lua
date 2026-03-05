@@ -20,6 +20,7 @@ local ImGui = require 'ImGui'
 local DEBUG = true
 local State = require 'srl.core.State'
 local HealService = require 'srl.service.HealService'
+local TradeService = require 'srl.service.TradeService'
 PackageMan.Require('lyaml')
 PackageMan.Require('luafilesystem', 'lfs')
 
@@ -37,6 +38,7 @@ local function DrawDebugWindow(castService, buffService, healService, combatServ
 
             if State and State.assist then
                 ImGui.Text("Assist Generation: " .. tostring(State.assist.generation))
+                ImGui.Text("Assist Target Id: " .. tostring(State.assist.targetID))
             else
                 ImGui.Text("Assist Generation: nil")
             end
@@ -53,7 +55,8 @@ local function DrawDebugWindow(castService, buffService, healService, combatServ
             end
 
             ImGui.Separator()
-            ImGui.Text("Queue")
+            ImGui.Text("Queue N: " .. #castService.queue)
+
             ImGui.BeginChild("QueueList", 0, 150, true)
             if castService and castService.queue then
                 if #castService.queue == 0 then
@@ -330,6 +333,7 @@ local function mainLoop()
     end)
 
     CommandBus:register("COMBAT_ENDED", function()
+            State:clearCombatState()
             followService:resumeFollow()
     end)
 
@@ -356,6 +360,7 @@ local function mainLoop()
         buffService:update()
         combatService:update()
         followService:checkFollow()
+        TradeService:update()
         mq.delay(50)
 
         Logging.Debug("Main While loop End")

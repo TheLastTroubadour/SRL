@@ -6,6 +6,7 @@ State.assist = {
     scope      = nil,
     active = false,
     sender = nil,
+    assignedTargetId = nil
 }
 
 --Combat State
@@ -31,6 +32,10 @@ State.flags = {
     paused = false,
 }
 
+State.caster = {
+    medMode = false
+}
+
 ------------------------------------------------
 -- Follow Helpers
 ------------------------------------------------
@@ -50,14 +55,25 @@ function State:stopAssist()
 end
 
 function State:updateAssistState(payload)
-    self.assist.generation = payload.generation
+    self.assist.generation = self.assist.generation + 1
     self.assist.targetID = payload.id
+    self.assist.assignedTargetId = payload.id
     self.assist.sender = payload.sender
     self.assist.active = true
 end
 
 function State:updateCombatState(state)
     self.combat.combatState = state
+end
+
+function State:clearCombatState()
+    self.assist.generation = self.assist.generation + 1
+    self.assist.targetID = nil
+    self.assist.active = false
+end
+
+function State:setMedMode(state)
+    self.caster.medMode = state
 end
 
 return State

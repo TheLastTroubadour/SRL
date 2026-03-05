@@ -1,5 +1,6 @@
 local mq = require('mq')
 local Job = require('srl.model.Job')
+local TableUtil = require 'srl.util.TableUtil'
 
 local HealService = {}
 HealService.__index = HealService
@@ -38,7 +39,7 @@ function HealService:collectTargets()
 
         local m = mq.TLO.Group.Member(i)
 
-        if m() then
+        if m() and m.Spawn() then
             local role = self:getRole(m.CleanName())
 
             table.insert(targets,{
@@ -127,7 +128,6 @@ end
 function HealService:checkEmergency(targets)
 
     for _,t in ipairs(targets) do
-
         if t.hp <= 15 and not self:healLocked(t.id) then
             return t
         end

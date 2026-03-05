@@ -11,6 +11,7 @@ function CombatService:new(castService, config, commandBus)
     self.castService = castService
     self.config = config
     self.commandBus = commandBus
+    self.tryingToMed = false
     self.rotation =
     {
         spellRotation = self:getNukesFromKey('Nukes.Main'),
@@ -28,7 +29,55 @@ function CombatService:getAbilityRotation()
     return self.rotation.abilityRotation
 end
 
+function CombatService:handleMed()
 
+    if mq.TLO.Me.Casting() or mq.TLO.Me.Moving() then
+        return
+    end
+
+    local mana = mq.TLO.Me.PctMana()
+    local medStart = self.config:get('General.medStart') or 10
+    local medEnd = self.config:get('General.medStop') or 100
+
+    -- never med during combat
+    if State.assist.targetID then
+        if mq.TLO.Me.Sitting() then
+            mq.cmd("/stand")
+        end
+        return
+    end
+    -- enter med mode
+    if not State.caster.medMode and mana < medStart then
+        State:setMedMode(true)
+    end
+
+    -- exit med mode
+    if State.caster.medMode and mana >= medEnd then
+        State:setMedMode(false)
+        if mq.TLO.Me.Sitting() then
+            mq.cmd("/stand")
+        end
+        return
+    end
+
+    -- if moving, pause med posture
+    if mq.TLO.Me.Moving() then
+        if mq.TLO.Me.Sitting() then
+            mq.cmd("/stand")
+        end
+        return
+    end
+
+    -- stay sitting while medding
+    if State.caster.medMode then
+        if not mq.TLO.Me.Sitting() and not mq.TLO.Me.Casting() then
+            mq.cmd("/sit")
+        end
+    end
+
+
+
+end
 
 function CombatService:getAbilitiesFromKey(key)
     local values = self.config:get(key)
@@ -67,7 +116,9 @@ end
 
 function CombatService:assist()
 
-    local targetId = State.assist.targetID
+    local targetId = State.assist.assignedTargetId
+
+    local assistType = self.config:get('AssistSettings.type')
 
     if not State.assist.targetID then return end
 
@@ -85,6 +136,11 @@ function CombatService:assist()
 
     mq.cmdf('/target id %s', targetId)
     mq.delay(150)
+
+    if assistType and assistType == 'off' then
+        return
+    end
+
     mq.cmdf('/stick behind 10 moveback uw')
     mq.delay(50)
     mq.cmd('/attack on')
@@ -92,8 +148,12 @@ end
 
 function CombatService:update()
 
-    local hasAggro = self:hasHostileXTarget()
+    if not State.assist.targetID then
+        self:handleMed()
+        return
+    end
 
+    local hasAggro = self:hasHostileXTarget()
     if hasAggro then
         for _, entry in ipairs(self.rotation.spellRotation) do
             if self:canUse(entry) then
@@ -116,7 +176,6 @@ function CombatService:update()
     end
 
     if(State.combat.combatState) then
-        State:updateCombatState(false)
         self.commandBus:dispatch("COMBAT_ENDED")
     end
 end

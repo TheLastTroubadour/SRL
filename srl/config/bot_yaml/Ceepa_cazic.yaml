@@ -6,40 +6,46 @@ Shaman:
 
   AutoCanni: false
 
-
 Nukes:
   Main:
-
+    - spell: Frost Rift
+      gem: 3
 
 Heals:
-  Main:
-    Tanks:
+  Spells:
+    important:
+      - spell: Minor Healing
+        threshold: 50
+        priority: 430
+        gem: 1
+    tank:
+      - spell: Minor Healing
+        threshold: 60
+        priority: 450
+        gem: 1
+    normal:
+      - spell: Minor Healing
+        threshold: 50
+        priority: 400
+        gem: 1
+  Tanks:
 
-    TankHeal:
+  TankHeal:
 
-    ImportantBotHeal:
+  ImportantBotHeal:
 
-    PetHeal:
+  PetHeal:
 
-    HealOverTimeSpell: 
+  HealOverTimeSpell:
 
-    WhoToHeal:
-      Pets: Pets
-
-      Tank: Tank
-
-      ImportantBot: ImportantBot
-
-      GroupMembers: GroupMembers
-
-
-    PetOwners:
-
-    ImportantBots:
-
-    XTargets:
-
-
+  WhoToHeal:
+    Pets: Pets
+    Tank: Tank
+    ImportantBot: ImportantBot
+    GroupMembers: GroupMembers
+  PetOwners:
+  ImportantBots:
+  XTargets:
 
 DotsOnCommand:
   Main:
@@ -51,6 +57,8 @@ DotsOnAssist:
 
 General:
   debugLevel: off
+  medStop: 100
+  medStart: 70
 
 
 LifeSupport:
@@ -65,7 +73,13 @@ UseItems:
 
 Buffs:
   BotBuff:
-
+    - spell: Feet like Cat
+      charactersToBuff:
+        - Yeesel
+        - Heezel
+        - Weetel
+        - Deepel
+      gem: 5
   CombatBuff:
 
   GroupBuff:
@@ -73,8 +87,8 @@ Buffs:
   InstantBuff:
 
   SelfBuff:
-
-
+    - spell: Feet like Cat
+      gem: 5
 Aura:
   Aura:
 

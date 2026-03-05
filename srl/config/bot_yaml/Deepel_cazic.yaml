@@ -8,8 +8,7 @@ AssistSettings:
   rangedDistance: 100
   AutoAssistEngagePercent: 98
   # (melee/ranged/off)
-  type: Off
-
+  type: 'off'
 
 Aura:
   Aura:
@@ -21,6 +20,8 @@ Buffs:
   GroupBuff:
   InstantBuff:
   SelfBuff:
+    - spell: Minor Shielding
+      gem: 8
   BotBuff:
   CombatBuff:
 Wizard:
@@ -31,17 +32,19 @@ Wizard:
       spell: 
 Nukes:
   Main:
-    - spell: 'Blast of Cold'
+    - spell: 'Fire Bolt'
+      gem: 1
+    - spell: Shock of Fire
       gem: 2
 SwapItems:
   Main: 
-
 
 _version: 1
 
 General:
   debugLevel: off
-
+  medStop: 100
+  medStart: 70
 
 LifeSupport:
 
