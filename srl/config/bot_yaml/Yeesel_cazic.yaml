@@ -68,14 +68,15 @@ Buffs:
 
   SelfBuff:
     - gem: 2
-      spell: Courage
+      spell: Center
   BotBuff:
     - charactersToBuff:
         - Ceepa
         - Heezel
         - Weetel
         - Deepel
-      spell: Courage
+        - Booguu
+      spell: Center
       gem: 2
 
   CombatBuff:

@@ -40,6 +40,7 @@ function CastService:startWorker()
                 local job = self.queue[i]
                 if job.generation then
                     if job.generation ~= State.assist.generation then
+                        print("Removing job from queue: " .. job.key)
                         self.queuedKeys[job.key] = nil
                         table.remove(self.queue, i)
                     end

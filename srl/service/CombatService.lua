@@ -5,13 +5,14 @@ local Job = require 'srl.model.Job'
 local TableUtil = require 'srl.util.TableUtil'
 CombatService.__index = CombatService
 
-function CombatService:new(castService, config, commandBus)
+function CombatService:new(castService, config, commandBus, roleService)
     local self = setmetatable({}, CombatService)
 
     self.castService = castService
     self.config = config
     self.commandBus = commandBus
     self.tryingToMed = false
+    self.roleService = roleService
     self.rotation =
     {
         spellRotation = self:getNukesFromKey('Nukes.Main'),
@@ -32,6 +33,11 @@ end
 function CombatService:handleMed()
 
     if mq.TLO.Me.Casting() or mq.TLO.Me.Moving() then
+        return
+    end
+
+    local roles = self.roleService:getRoles()
+    if not roles.caster then
         return
     end
 

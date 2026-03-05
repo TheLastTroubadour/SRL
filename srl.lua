@@ -21,6 +21,7 @@ local DEBUG = true
 local State = require 'srl.core.State'
 local HealService = require 'srl.service.HealService'
 local TradeService = require 'srl.service.TradeService'
+local RoleService = require 'srl.service.RoleService'
 PackageMan.Require('lyaml')
 PackageMan.Require('luafilesystem', 'lfs')
 
@@ -39,6 +40,7 @@ local function DrawDebugWindow(castService, buffService, healService, combatServ
             if State and State.assist then
                 ImGui.Text("Assist Generation: " .. tostring(State.assist.generation))
                 ImGui.Text("Assist Target Id: " .. tostring(State.assist.targetID))
+                ImGui.Text("Has Host X Target: " .. tostring(combatService:hasHostileXTarget()))
             else
                 ImGui.Text("Assist Generation: nil")
             end
@@ -319,6 +321,7 @@ local function mainLoop()
     end)
 
     combatService.commandBus = CommandBus
+    combatService.roleService = RoleService
 
     local followService = FollowService:new()
     local followController = FollowController:new(followService)
