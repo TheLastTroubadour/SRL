@@ -179,8 +179,6 @@ function BuffService:handlePollPromise(target, buffEntry, promise)
                 return
             end
 
-            print("Does not have buff")
-
             -- Enqueue cast
             self.castService:enqueue(buffEntry)
 
@@ -214,8 +212,6 @@ function BuffService:handlePollPromise(target, buffEntry, promise)
                     return
                 end
 
-                print("Within 10%")
-
                 self.castService:enqueue(buffEntry)
 
                 self.nextCheck[k] = now + 100000
@@ -224,9 +220,6 @@ function BuffService:handlePollPromise(target, buffEntry, promise)
             -- 3️⃣ Buff healthy → schedule next expiration check
             ------------------------------------------------
             self.nextCheck[k] = now + (duration * .8 * 1000)
-            print("Buff Healthy")
-            print(self.nextCheck[k])
-            print(now)
         end
 
 
