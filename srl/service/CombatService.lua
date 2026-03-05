@@ -5,11 +5,12 @@ local Job = require 'srl.model.Job'
 local TableUtil = require 'srl.util.TableUtil'
 CombatService.__index = CombatService
 
-function CombatService:new(castService, config)
+function CombatService:new(castService, config, commandBus)
     local self = setmetatable({}, CombatService)
 
     self.castService = castService
     self.config = config
+    self.commandBus = commandBus
     self.rotation =
     {
         spellRotation = self:getNukesFromKey('Nukes.Main'),
@@ -84,41 +85,78 @@ function CombatService:assist()
 
     mq.cmdf('/target id %s', targetId)
     mq.delay(150)
-    mq.cmd('/face')
-    mq.delay(100)
-    mq.cmdf('/stick behind loose')
+    mq.cmdf('/stick behind 10 moveback uw')
     mq.delay(50)
     mq.cmd('/attack on')
 end
 
 function CombatService:update()
 
-    if mq.TLO.Me.Casting() then return end
-    if not mq.TLO.Target() then return end
-    if mq.TLO.Target.Type() ~= "NPC" then return end
-    if mq.TLO.Target.Dead() then return
-        --If was following someone resume follow?
-        --Next Target or Wait for Call
-    end
+    local hasAggro = self:hasHostileXTarget()
 
-    for _, entry in ipairs(self.rotation.spellRotation) do
-        if self:canUse(entry) then
-            entry.targetId = mq.TLO.Target.ID()
-            entry.generation = State.assist.generation
-            self.castService:enqueue(entry)
-            return
-        end
-    end
-    for _, entry in ipairs(self.rotation.abilityRotation) do
+    if hasAggro then
+        for _, entry in ipairs(self.rotation.spellRotation) do
             if self:canUse(entry) then
                 entry.targetId = mq.TLO.Target.ID()
                 entry.generation = State.assist.generation
                 self.castService:enqueue(entry)
                 return
             end
+        end
+        for _, entry in ipairs(self.rotation.abilityRotation) do
+            if self:canUse(entry) then
+                entry.targetId = mq.TLO.Target.ID()
+                entry.generation = State.assist.generation
+                self.castService:enqueue(entry)
+                return
+            end
+        end
+        State:updateCombatState(true)
+        return
     end
-    --restick?
 
+    if(State.combat.combatState) then
+        State:updateCombatState(false)
+        self.commandBus:dispatch("COMBAT_ENDED")
+    end
+end
+
+function CombatService:shouldEngage()
+    local target = mq.TLO.Target
+    if not target() then return false end
+
+    if target.Type() ~= "NPC" then return false end
+    if target.Dead() then return false end
+
+    -- already fighting
+    if mq.TLO.Me.Combat() then
+        return true
+    end
+
+    -- mob attacking us
+    if target.Target.ID() == mq.TLO.Me.ID() then
+        return true
+    end
+
+    -- mob attacking group member
+    if mq.TLO.Me.GroupSize() > 0 then
+        for i = 1, mq.TLO.Me.GroupSize() do
+            local member = mq.TLO.Group.Member(i)
+            if member() and target.Target.ID() == member.ID() then
+                return true
+            end
+        end
+    end
+
+    if mq.TLO.Target.Distance() > 200 then
+        return false
+    end
+
+    if mq.TLO.Target.PctAggro() > 0 then
+        return true
+    end
+
+    return false
 end
 
 function CombatService:canUse(entry)
@@ -151,6 +189,19 @@ function CombatService:canUse(entry)
         return true
     end
 
+    return false
+end
+
+function CombatService:hasHostileXTarget()
+    local slots = mq.TLO.Me.XTargetSlots()
+
+    for i = 1, slots do
+        local xt = mq.TLO.Me.XTarget(i)
+
+        if xt() and xt.Type() == "NPC" and not xt.Dead() then
+            return true
+        end
+    end
     return false
 end
 

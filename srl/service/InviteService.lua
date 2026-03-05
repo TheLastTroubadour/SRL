@@ -31,7 +31,6 @@ function InviteService:handleGroupInvite(inviter)
     if mq.TLO.Me.Grouped() then return end
 
     if not self:isDanNetPeer(inviter) then
-        print("Invite ignored (not a DanNet peer)")
         return
     end
 
@@ -41,13 +40,11 @@ end
 
 function InviteService:isDanNetPeer(name)
 
-    local peers = mq.TLO.DanNet.Peers() or {}
-
-    for i=1, peers do
-        if mq.TLO.DanNet.Peers(i).Name() == name then
-            return true
-        end
+    if mq.TLO.DanNet(name) then
+        return true
     end
 
     return false
 end
+
+return InviteService

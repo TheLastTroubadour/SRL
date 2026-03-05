@@ -74,12 +74,14 @@ function CastService:startWorker()
 end
 
 function CastService:performCast(job)
-    self.bus:broadcast("cast_started " .. mq.TLO.Me.Name() .. "spell" .. job.name .. " targetId: " .. job.targetId, {
+    --[[
+    self.bus:broadcast("cast_started " .. mq.TLO.Me.Name() .. " spell: " .. job.name .. " targetId: " .. job.targetId, {
         caster = mq.TLO.Me.Name(),
         spell = job.name,
         targetId = job.targetId,
         type = job.type
     })
+    --]]
 
 
     local result
@@ -96,6 +98,7 @@ function CastService:performCast(job)
         result = self:castAbility(job)
     end
 
+    --[[
     -- announce completion
     self.bus:broadcast("cast_finished " .. mq.TLO.Me.Name() .. "spell" .. job.name .. " targetId: " .. job.targetId, {
         caster = mq.TLO.Me.Name(),
@@ -103,6 +106,7 @@ function CastService:performCast(job)
         targetId = job.targetId,
         success = result
     })
+    --]]
 
     return result
 end

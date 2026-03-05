@@ -12,10 +12,6 @@ local BindService = require 'srl/service/BindService'
 local CombatController = require 'srl/controller/CombatController'
 local CommandBus = require 'srl/core/CommandBus'
 local Config = require 'srl.config.Config'
-local Base = require 'srl.config.defaults.Base'
-local Class = require 'srl.config.defaults.Class'
-local Role = require 'srl.config.defaults.Role'
-local RoleService = require 'srl.service.RoleService'
 local PackageMan = require('mq/PackageMan')
 local TableUtil = require 'srl.util.TableUtil'
 local FollowController = require 'srl.controller.FollowController'
@@ -43,6 +39,11 @@ local function DrawDebugWindow(castService, buffService, healService, combatServ
                 ImGui.Text("Assist Generation: " .. tostring(State.assist.generation))
             else
                 ImGui.Text("Assist Generation: nil")
+            end
+
+            if State and State.follow then
+                ImGui.Text("Follow Id: " .. tostring(State.follow.followId))
+                ImGui.Text("Follow State: " .. tostring(State.follow.active))
             end
 
             if castService and castService.currentlyInFlight then
@@ -314,6 +315,8 @@ local function mainLoop()
         combatController:assist(payload)
     end)
 
+    combatService.commandBus = CommandBus
+
     local followService = FollowService:new()
     local followController = FollowController:new(followService)
     local healService = HealService:new(castService, config)
@@ -324,6 +327,10 @@ local function mainLoop()
 
     CommandBus:register('Stop', function(payload)
         followController:stop()
+    end)
+
+    CommandBus:register("COMBAT_ENDED", function()
+            followService:resumeFollow()
     end)
 
     mq.imgui.init("CombatDebugUI", function()
@@ -338,6 +345,7 @@ local function mainLoop()
 
     while true do
         Logging.Debug("Main While loop Start")
+        mq.doevents()
         --order matters
         --Process network replies and resolve promises
         busService:update()
@@ -347,6 +355,7 @@ local function mainLoop()
         healService:update()
         buffService:update()
         combatService:update()
+        followService:checkFollow()
         mq.delay(50)
 
         Logging.Debug("Main While loop End")

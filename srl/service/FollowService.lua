@@ -7,7 +7,7 @@ FollowService.__index = FollowService
 
 function FollowService:new()
     local self = setmetatable({}, FollowService)
-
+    self.lastFollowCheck = nil
     return self
 end
 
@@ -27,6 +27,12 @@ function FollowService:follow(followId)
     mq.delay(100)
     mq.cmd("/stick 5")
     Logging.Debug("Movement.follow End")
+end
+
+function FollowService:resumeFollow()
+    if State.follow.active and State.follow.followId then
+        self:follow(State.follow.followId)
+    end
 end
 
 --Handles the Events based off chat
@@ -66,16 +72,31 @@ end
 
 function FollowService:checkFollow()
     Logging.Debug("Movement.check_follow Start")
-
-    --TODO More checks?
-    if(State.assist.targetID) then return end
-
-    --ASSISTING always true here
-    if (State.follow.active) then
-        if(mq.TLO.Me.ID() ~= State.follow.followId) then
-            self:follow(State.follow.followId)
+    if self.lastFollowCheck and mq.gettime() - self.lastFollowCheck > 500 then
+        if not State.follow.enabled then
+            return
         end
+
+        -- don't follow during combat
+        if State.combat.inCombat then
+            return
+        end
+
+        --local dist = mq.TLO.Me.Distance(State.follow.followId)()
+
+        --if not dist then
+        --    return
+        --end
+
+
+        self:resumeFollow()
+        --if dist > self.config.followDistance then
+        --    mq.cmd("/stick hold " .. self.state.follow.target)
+        --end
     end
+
+    self.lastFollowCheck = mq.gettime()
+
     Logging.Debug("Movement.check_follow End")
 end
 

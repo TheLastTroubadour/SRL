@@ -8,6 +8,11 @@ State.assist = {
     sender = nil,
 }
 
+--Combat State
+State.combat = {
+    combatState = false
+}
+
 -- ===== Follow State =====
 State.follow = {
     followName = nil,
@@ -37,6 +42,7 @@ end
 
 function State:stopFollow()
     self.follow.active = false
+    self.follow.followId = nil
 end
 
 function State:stopAssist()
@@ -48,6 +54,10 @@ function State:updateAssistState(payload)
     self.assist.targetID = payload.id
     self.assist.sender = payload.sender
     self.assist.active = true
+end
+
+function State:updateCombatState(state)
+    self.combat.combatState = state
 end
 
 return State
