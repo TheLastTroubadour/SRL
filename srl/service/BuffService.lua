@@ -22,7 +22,7 @@ function BuffService:new(bus, scheduler, combatService, castService, config)
     self.bus = bus
     self.requested = {}     -- target:spell currently polling
     self.cooldowns = {}     -- suppression timer
-    self.nextCheck = {}   -- key → timestamp when next poll allowed
+    self.nextCheck = {}   -- key → timestamp when next poll allowed
 
     return self
 end
@@ -54,6 +54,11 @@ function BuffService:pollIfDue(target, spell)
     self.requested[k] = true
     --Prevent Immediate repoll
     self.nextCheck[k] = now + 2000
+
+    --Not In Zone
+    if not mq.TLO.Spawn(target)() then
+        self.nextCheck[k] = now + 60000
+    end
 
     return self.bus:request(
             target,
@@ -122,12 +127,12 @@ function BuffService:getBuffInformationForKey(key)
                 for _, character in ipairs(v.charactersToBuff) do
                     --TODO need to fix IniLine and don't need generation for buffs and add conditions instead of iniLine
                     local targetId = mq.TLO.Spawn('pc = ' .. character).ID()
-                    local job = Job:new(targetId, character, spellName, 'spell', 0, gem)
+                    local job = Job:new(targetId, character, spellName, 'buff', 0, gem)
                     table.insert(jobList, job)
                 end
             else
                 local characterId = mq.TLO.Me.ID()
-                local job = Job:new(characterId, mq.TLO.Me.Name(), spellName, 'spell', 0, gem)
+                local job = Job:new(characterId, mq.TLO.Me.Name(), spellName, 'buff', 0, gem)
                 table.insert(jobList, job)
             end
         end
@@ -174,7 +179,7 @@ function BuffService:handlePollPromise(target, buffEntry, promise)
             -- Suppress immediate re-poll
             self.cooldowns[k] = now + 5000
 
-            if self.castService:isQueued(buffEntry) == true then
+            if self.castService:isQueued(buffEntry) then
                 --Currently queued
                 return
             end
@@ -207,7 +212,7 @@ function BuffService:handlePollPromise(target, buffEntry, promise)
 
                 self.cooldowns[k] = now + 3000
 
-                if self.castService:isQueued(buffEntry) == true then
+                if self.castService:isQueued(buffEntry) then
                     --Currently queued
                     return
                 end
@@ -230,6 +235,14 @@ function BuffService:handlePollPromise(target, buffEntry, promise)
         end
 
     end)
+end
+
+function BuffService:setTakeHoldCooldownOnJob(job)
+    local k = key(job.targetName, job.name)
+    if self.nextCheck[k] then
+        --10 minutes
+        self.nextCheck[k] = 10 * 60 * 1000 + mq.gettime()
+    end
 end
 
 return BuffService

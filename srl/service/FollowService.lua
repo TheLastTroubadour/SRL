@@ -27,6 +27,7 @@ function FollowService:follow(followId)
     mq.delay(100)
     mq.cmd("/stick 5")
     Logging.Debug("Movement.follow End")
+    State:updateLastActivity()
 end
 
 function FollowService:resumeFollow()

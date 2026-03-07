@@ -1,8 +1,9 @@
 # Character Configuration
 General:
   debugLevel: off
+  maxDistance: 250
 SwapItems:
-  Main: 
+  Main:
 AssistSettings:
   meleeStickDistance: 15
   meleeStickPoint: Behind
@@ -21,7 +22,7 @@ Buffs:
 DotsOnAssist:
   Main:
 ShadowKnight:
-  LifeTap: 
+  LifeTap:
 Abilities:
   - Ability: Bash
 DotsOnCommand:
@@ -32,9 +33,8 @@ Burn:
   QuickBurn:
   LongBurn:
 UseItems:
-  Shrink: 
+  Shrink:
 Aura:
   Aura:
   CastAura: false
-
 

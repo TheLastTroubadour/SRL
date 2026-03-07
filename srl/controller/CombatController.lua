@@ -14,7 +14,6 @@ end
 function CombatController:assist(payload)
 
     State:updateAssistState(payload)
-
     self.combatService:assist(payload.id)
 end
 

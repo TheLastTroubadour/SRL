@@ -32,7 +32,6 @@ function CommandBus:init()
     mq.bind('/assiston', function(...)
         local args = { ... }
         local command = table.remove(args, 1)
-        print("Command " .. command)
         if not command then
             return
         end
@@ -102,6 +101,12 @@ function CommandBus:dispatch(command, payload)
     if handler then
         handler(payload)
     end
+end
+
+function CommandBus:diedReset()
+    mq.event('Died1', 'You have died', function()
+        --reset all the buff timers to 3-5 minutes?
+    end)
 end
 
 return CommandBus

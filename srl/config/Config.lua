@@ -121,7 +121,7 @@ end
 
 local function fileModified(path)
 
-    local p = io.popen('stat -c %Y "'..path..'"')
+    local p = io.open('stat -c %Y "'..path..'"')
 
     if not p then return 0 end
 
@@ -154,6 +154,7 @@ function ConfigService:loadCharacterYaml()
 
     if not file then
         print("Load Character Yaml failed")
+        file:close()
         return
     end
 

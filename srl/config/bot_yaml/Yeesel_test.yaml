@@ -1,0 +1,82 @@
+# Character Configuration
+Cleric:
+  DivineArbitrationPct: 35
+  EpicPct: 35
+  CelestialRegenarationPct: 0
+  AutoYaulp: false
+  YaulpSpell:
+Heals:
+  Tanks:
+    - Weetel
+  ImportantBot:
+    - Yeesel
+    - Ceepa
+  Spells:
+    important:
+      - spell: Greater Healing
+        threshold: 80
+        priority: 430
+        gem: 2
+    tank:
+      - spell: Superior Healing
+        threshold: 70
+        priority: 450
+        gem: 1
+    normal:
+      - spell: Greater Healing
+        threshold: 70
+        priority: 400
+        gem: 2
+
+LifeSupport:
+General:
+  maxDistance: 250
+  debugLevel: off
+  medStart: 20
+  medEnd: 100
+SwapItems:
+  Main:
+AssistSettings:
+  rangedDistance: 100
+  AutoAssistEngagePercent: 98
+  enabled: true
+  meleeStickDistance: 15
+  meleeStickPoint: Behind
+  # (melee/ranged/off)
+  type: Off
+Burn:
+  QuickBurn:
+  LongBurn:
+  FullBurn:
+_version: 1
+Aura:
+  CastAura: false
+  Aura:
+UseItems:
+  Shrink:
+Buffs:
+  InstantBuff:
+  SelfBuff:
+    - gem: 8
+      spell: Valor
+    - gem: 7
+      spell: Symbol of Pinzarn
+  BotBuff:
+    - charactersToBuff:
+        - Ceepae
+        - Heezel
+        - Weetel
+        - Deepel
+        - Booguu
+      spell: Valor
+      gem: 8
+    - spell: Symbol of Pinzarn
+      gem: 7
+      charactersToBuff:
+        - Ceepae
+        - Heezel
+        - Weetel
+        - Deepel
+        - Booguu
+  CombatBuff:
+  GroupBuff:

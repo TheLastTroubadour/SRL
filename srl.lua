@@ -11,7 +11,6 @@ local CastService = require 'srl/service/CastService'
 local BindService = require 'srl/service/BindService'
 local CombatController = require 'srl/controller/CombatController'
 local CommandBus = require 'srl/core/CommandBus'
-local Config = require 'srl.config.Config'
 local PackageMan = require('mq/PackageMan')
 local TableUtil = require 'srl.util.TableUtil'
 local FollowController = require 'srl.controller.FollowController'
@@ -22,8 +21,11 @@ local State = require 'srl.core.State'
 local HealService = require 'srl.service.HealService'
 local TradeService = require 'srl.service.TradeService'
 local RoleService = require 'srl.service.RoleService'
+local DebuffService = require 'srl.service.DebuffService'
 PackageMan.Require('lyaml')
 PackageMan.Require('luafilesystem', 'lfs')
+--needs to be after lyaml by packageman
+local Config = require 'srl.config.Config'
 
 local function DrawDebugWindow(castService, buffService, healService, combatService)
 
@@ -67,12 +69,13 @@ local function DrawDebugWindow(castService, buffService, healService, combatServ
 
                 for i, job in ipairs(castService.queue) do
                     ImGui.Text(string.format(
-                            "%d) Spell: %s | T:%s | P:%s | G:%s",
+                            "%d) Spell: %s | T:%s | P:%s | G:%s | K:%s",
                             i,
                             tostring(job.name),
                             tostring(job.targetId),
                             tostring(job.priority),
-                            tostring(job.generation)
+                            tostring(job.generation),
+                            tostring(job.key)
                     ))
                 end
 
@@ -315,6 +318,7 @@ local function mainLoop()
     castService.combatService = combatService
     local combatController = CombatController:new(combatService)
     local buffService = BuffService:new(busService, scheduler, combatService, castService, config)
+    castService.buffService = buffService
     CommandBus:init()
     CommandBus:register('Assist', function(payload)
         combatController:assist(payload)
@@ -326,6 +330,8 @@ local function mainLoop()
     local followService = FollowService:new()
     local followController = FollowController:new(followService)
     local healService = HealService:new(castService, config)
+    local debuffService = DebuffService:new(castService, config)
+    combatService.debuffService = debuffService
 
     CommandBus:register('Follow', function(payload)
         followController:follow(payload)
@@ -337,6 +343,7 @@ local function mainLoop()
 
     CommandBus:register("COMBAT_ENDED", function()
             State:clearCombatState()
+            castService:interruptCasting()
             followService:resumeFollow()
     end)
 

@@ -1,0 +1,41 @@
+# Character Configuration
+Bard:
+  CharmSpell:
+  CharmLevel:
+  Melodies:
+  AutoMelody:
+  AutoMez: false
+  MezSpell:
+  MezLevel:
+Abilities:
+  Ability:
+Buffs:
+  SelfBuff:
+  BotBuff:
+  CombatBuff:
+  GroupBuff:
+  InstantBuff:
+General:
+  debugLevel: off
+  maxDistance: 250
+LifeSupport:
+Burn:
+  LongBurn:
+  FullBurn:
+  QuickBurn:
+UseItems:
+  Shrink:
+AssistSettings:
+  # (melee/ranged/off)
+  type: melee
+  AutoAssistEngagePercent: 98
+  enabled: true
+  meleeStickDistance: 15
+  meleeStickPoint: Behind
+  rangedDistance: 100
+Aura:
+  CastAura: false
+  Aura:
+_version: 1
+SwapItems:
+  Main:

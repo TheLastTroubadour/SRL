@@ -12,6 +12,7 @@ function CastService:new(scheduler, combatService)
 
     self.scheduler = scheduler
     self.combatService = combatService
+    self.buffService = {}
     self.queue = {}
     self.queuedKeys = {}
     self.currentlyInFlight = nil
@@ -40,11 +41,31 @@ function CastService:startWorker()
                 local job = self.queue[i]
                 if job.generation then
                     if job.generation ~= State.assist.generation then
-                        print("Removing job from queue: " .. job.key)
                         self.queuedKeys[job.key] = nil
                         table.remove(self.queue, i)
                     end
                 end
+
+                --remove anything that doesn't have a spawn also since might have zoned and new id
+                local spawn = mq.TLO.Spawn('id ' .. job.targetId)
+                if not spawn() then
+                    print("Removing from queue spawn not alive")
+                    table.remove(self.queue, i)
+                end
+
+                --Don't queue anything not in range need to do something for AE spells
+                if(job.type ~= 'ability') then
+                    local spellDistance = mq.TLO.Spell(job.name).Range()
+                    if spellDistance and spawn() and tonumber(spellDistance) < tonumber(spawn.Distance()) then
+                        print("Removing due to spell distance " .. job.name .. job.targetId)
+                        table.remove(self.queue, i)
+                    end
+                end
+                --Don't cast on dead targets
+                if spawn() and spawn.Dead() then
+                    table.remove(self.queue, i)
+                end
+
             end
 
             if self.currentlyInFlight
@@ -52,6 +73,11 @@ function CastService:startWorker()
                     and self.currentlyInFlight.generation ~= State.assist.generation then
                 -- Let cast finish naturally
                 self.currentlyInFlight = nil
+            end
+
+            if self.currentlyInFlight then
+                mq.delay(25)
+                return
             end
 
             if #self.queue == 0 then
@@ -66,7 +92,12 @@ function CastService:startWorker()
                 local job = table.remove(self.queue, 1)
 
                 self.currentlyInFlight = job
-                self:performCast(job)
+                local result = self:performCast(job)
+                if result == 'CAST_TAKEHOLD' then
+                    if(job.type == 'buff') then
+                        self.buffService:setTakeHoldCooldownOnJob(job)
+                    end
+                end
                 self.currentlyInFlight = nil
                 self.queuedKeys[job.key] = nil
             end
@@ -84,10 +115,9 @@ function CastService:performCast(job)
     })
     --]]
 
-
     local result
 
-    if job.type == "spell" or job.type == "heal" then
+    if job.type == "spell" or job.type == "heal" or job.type == "buff" or job.type == "nuke" then
         result = self:castSpell(job)
     elseif job.type == "aa" then
         result = self:castAA(job)
@@ -119,7 +149,6 @@ end
 local function hasEnoughMana(spellName)
     local spell = mq.TLO.Spell(spellName)
     if not spell() then
-        print("Spell not found:", spellName)
         return false
     end
 
@@ -133,25 +162,72 @@ function CastService:castAbility(job)
     mq.cmdf('/doability %s', job.name)
 end
 
+function CastService:castDisc(job)
+    if mq.TLO.Me.CombatAbilityReady(job.name)() then
+        mq.cmdf('/disc %s', job.name)
+    end
+end
+
+
 function CastService:castSpell(job)
     if not hasEnoughMana(job.name) then
         print("Not enough mana for: " .. job.name)
         return
     end
-    self:srlCast(job)
+    if job.type == 'buff' then
+        local alreadyHasBuff = self:checkIfHasBuff(job)
+        if alreadyHasBuff then
+            return
+        end
+    end
+    self:memSpellIfNeeded(entry)
+    return self:srlCast(job)
 end
+
+function CastService:checkIfHasBuff(job)
+    if(mq.TLO.Target.ID() ~= job.targetId) then
+        Target:getTargetById(job.targetId)
+    end
+
+    if mq.TLO.Target.Buff(job.name)() then
+        return true
+    end
+    return false
+end
+
+
+function CastService:memSpellIfNeeded(job)
+    if job then
+        if mq.TLO.Me.Spell(job.name)() then
+            if not mq.TLO.Me.Gem(job.name)() then
+                mq.cmdf("/memorize \"%s\" %s", job.name, job.gem)
+                mq.delay(5000, function()
+                    return mq.TLO.Me.Gem(job.name)() ~= nil
+                end)
+            end
+        end
+    end
+end
+
 
 function CastService:srlCast(job)
     Logging.Debug("Cast Util Export SRL Cast Start")
     local isSpellReady = mq.TLO.Cast.Ready(job.name)
     Logging.Debug(("Is spell ready %s --- %s "):format(job.name, isSpellReady))
     if(isSpellReady) then
-        Target:getTargetById(job.targetId)
+        if not job.targetId then
+            return "BAD_TARGET_ID"
+        end
+
+        if mq.TLO.Target.ID() ~= job.targetId then
+            Target:getTargetById(job.targetId)
+        end
         --param gems
         --need to stop moving as well
         mq.cmd("/stick off");
         mq.cmd("/afollow off")
         local castTime = mq.TLO.Spell(job.name).CastTime.TotalSeconds() * 1000 + 1500
+        State:updateLastActivity()
         mq.cmdf("/casting \"%s\"|%s", job.name, job.gem)
         mq.delay(castTime)
         local result = mq.TLO.Cast.Result()
@@ -162,16 +238,19 @@ function CastService:srlCast(job)
 end
 
 function CastService:clearCombatQueue()
-
-    local newQueue = {}
-
-    for _,job in ipairs(self.queue) do
-        if job.type ~= "spell" or not job.generation then
-            table.insert(newQueue, job)
+    for i = #self.queue, 1, -1 do
+        local job = self.queue[i]
+        if job.type == "ability" or job.type == "nuke" then
+            self.queuedKeys[job.key] = nil
+            table.remove(self.queue, i)
         end
     end
+end
 
-    self.queue = newQueue
+function CastService:interruptCasting()
+    if mq.TLO.Me.Casting() and mq.TLO.Target.ID() == State.assist.targetID then
+        mq.cmd('/interrupt')
+    end
 end
 
 return CastService

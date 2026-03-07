@@ -3,12 +3,16 @@ local CombatService = {}
 local State = require 'srl.core.State'
 local Job = require 'srl.model.Job'
 local TableUtil = require 'srl.util.TableUtil'
+local TargetService = require 'srl.service.TargetService'
 CombatService.__index = CombatService
 
-function CombatService:new(castService, config, commandBus, roleService)
+local IDLE_DELAY = 5000
+
+function CombatService:new(castService, config, commandBus, roleService, debuffService)
     local self = setmetatable({}, CombatService)
 
     self.castService = castService
+    self.debuffService = debuffService
     self.config = config
     self.commandBus = commandBus
     self.tryingToMed = false
@@ -20,6 +24,10 @@ function CombatService:new(castService, config, commandBus, roleService)
     }
 
     return self
+end
+
+local function isIdle(lastActivity, idleDelay)
+    return (mq.gettime() - lastActivity) > idleDelay
 end
 
 function CombatService:getSpellRotation()
@@ -36,8 +44,11 @@ function CombatService:handleMed()
         return
     end
 
+    if mq.TLO.Me.Dead() then return end
+
+
     local roles = self.roleService:getRoles()
-    if not roles.caster then
+    if not roles.caster and not roles.healer then
         return
     end
 
@@ -52,6 +63,7 @@ function CombatService:handleMed()
         end
         return
     end
+
     -- enter med mode
     if not State.caster.medMode and mana < medStart then
         State:setMedMode(true)
@@ -68,6 +80,7 @@ function CombatService:handleMed()
 
     -- if moving, pause med posture
     if mq.TLO.Me.Moving() then
+        State:updateLastActivity()
         if mq.TLO.Me.Sitting() then
             mq.cmd("/stand")
         end
@@ -76,13 +89,19 @@ function CombatService:handleMed()
 
     -- stay sitting while medding
     if State.caster.medMode then
-        if not mq.TLO.Me.Sitting() and not mq.TLO.Me.Casting() then
-            mq.cmd("/sit")
+        if not mq.TLO.Me.Sitting() and not mq.TLO.Me.Casting() and not mq.TLO.Me.Moving() then
+            if isIdle(State.lastActivity, IDLE_DELAY) then
+                mq.cmd("/sit")
+            end
         end
     end
 
-
-
+    --if idle feel free to sit even if not medding
+    if (isIdle(State.lastActivity, IDLE_DELAY) and mana < 100) then
+        if not mq.TLO.Me.Sitting() then
+            mq.cmd("/sit")
+        end
+    end
 end
 
 function CombatService:getAbilitiesFromKey(key)
@@ -91,7 +110,11 @@ function CombatService:getAbilitiesFromKey(key)
     if values then
         for _, v in ipairs(values) do
             local abilityName = v.Ability
-            local job = Job:new(nil, nil, tostring(abilityName), 'ability', 50, nil)
+            local type = v.type or 'ability'
+            local job = Job:new(nil, nil, tostring(abilityName), type, 50, nil)
+            if v.debuff then
+                job.abilityHasDebuff = true
+            end
             table.insert(jobList, job)
         end
 
@@ -107,8 +130,7 @@ function CombatService:getNukesFromKey(key)
         for _, v in ipairs(values) do
             local spellName = v.spell
             local gem = v.gem or 8
-
-            local job = Job:new(nil, nil, spellName, 'spell', 50, gem)
+            local job = Job:new(nil, nil, spellName, 'nuke', 50, gem)
             table.insert(jobList, job)
         end
     end
@@ -122,19 +144,29 @@ end
 
 function CombatService:assist()
 
-    local targetId = State.assist.assignedTargetId
+    local targetId = State.assist.targetID
 
-    local assistType = self.config:get('AssistSettings.type')
+    local assistType = self.config:get('AssistSettings.type') or 'Off'
+
+    if assistType and assistType:lower() == 'off' then
+        return
+    end
 
     if not State.assist.targetID then return end
 
-    if State.assist.targetID ~= mq.TLO.Target.ID() then
+    if not mq.TLO.Spawn('id ' .. State.assist.targetID)() then
+        State:stopAssist()
+        return
+    end
 
+    if State.assist.targetID ~= mq.TLO.Target.ID() then
         print("New assist target:", targetId)
 
         -- Clear any queued combat jobs
         self.castService:clearCombatQueue()
     end
+
+    State:updateLastActivity()
 
     if(State.assist.sender == mq.TLO.Me.Name()) then
         return
@@ -143,14 +175,12 @@ function CombatService:assist()
     mq.cmdf('/target id %s', targetId)
     mq.delay(150)
 
-    if assistType and assistType == 'off' then
-        return
-    end
-
     mq.cmdf('/stick behind 10 moveback uw')
     mq.delay(50)
     mq.cmd('/attack on')
 end
+
+
 
 function CombatService:update()
 
@@ -161,20 +191,17 @@ function CombatService:update()
 
     local hasAggro = self:hasHostileXTarget()
     if hasAggro then
+        self.debuffService:update()
         for _, entry in ipairs(self.rotation.spellRotation) do
+            entry:setTargetId(State.assist.targetID)
             if self:canUse(entry) then
-                entry.targetId = mq.TLO.Target.ID()
-                entry.generation = State.assist.generation
                 self.castService:enqueue(entry)
-                return
             end
         end
         for _, entry in ipairs(self.rotation.abilityRotation) do
+            entry:setTargetId(State.assist.targetID)
             if self:canUse(entry) then
-                entry.targetId = mq.TLO.Target.ID()
-                entry.generation = State.assist.generation
                 self.castService:enqueue(entry)
-                return
             end
         end
         State:updateCombatState(true)
@@ -191,7 +218,11 @@ function CombatService:shouldEngage()
     if not target() then return false end
 
     if target.Type() ~= "NPC" then return false end
-    if target.Dead() then return false end
+    if target.Dead() then
+        if target.ID() == State.assist.targetID then
+            State.assist.targetID = nil
+        end
+    return false end
 
     -- already fighting
     if mq.TLO.Me.Combat() then
@@ -227,30 +258,26 @@ end
 function CombatService:canUse(entry)
     if not entry or not entry.name then return false end
 
-    -- Don't queue if already casting
-    if mq.TLO.Me.Casting() then return false end
-
     -- Prevent queue flooding
-    if self.castService:isQueued(entry.name) then return false end
+    if self.castService:isQueued(entry.key) then return false end
 
-    if entry.type == "spell" then
+    if entry.type == "nuke" then
         local spell = mq.TLO.Spell(entry.name)
         if not spell() then return false end
-
-        -- Mana check
-        if mq.TLO.Me.CurrentMana() < spell.Mana() then return false end
-
-        -- Spell ready
-        if not mq.TLO.Me.SpellReady(entry.name)() then return false end
-
-        -- Global cooldown safety
-        if mq.TLO.Me.GemTimer(entry.gem)() > 0 then return false end
-
         return true
     end
 
-    if entry.type == "ability" then
-        if not mq.TLO.Me.AbilityReady(entry.name)() then return false end
+    if entry.abilityHasDebuff then
+        if mq.TLO.Target.ID() ~= entry.targetId then
+            TargetService:getTargetById(entry.targetId)
+        end
+        if not mq.TLO.Target.Buff(entry.name)() then
+            return true
+        end
+        return false
+    end
+
+    if entry.type == 'ability' and mq.TLO.Me.AbilityReady(entry.name)() then
         return true
     end
 

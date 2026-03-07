@@ -1,16 +1,4 @@
 # Character Configuration
-General:
-  debugLevel: off
-SwapItems:
-  Main: 
-AssistSettings:
-  meleeStickDistance: 15
-  meleeStickPoint: Behind
-  rangedDistance: 100
-  AutoAssistEngagePercent: 98
-  enabled: true
-  # (melee/ranged/off)
-  type: melee
 _version: 1
 Buffs:
   InstantBuff:
@@ -18,23 +6,30 @@ Buffs:
   BotBuff:
   CombatBuff:
   GroupBuff:
-DotsOnAssist:
-  Main:
-ShadowKnight:
-  LifeTap: 
 Abilities:
-  - Ability: Bash
-DotsOnCommand:
+  - Ability: Frenzy
+  - Ability: Leg Cut
+    type: disc
+    debuff: true
+UseItems:
+  Shrink:
+General:
+  debugLevel: off
+  maxDistance: 250
+AssistSettings:
+  meleeStickDistance: 15
+  meleeStickPoint: Behind
+  rangedDistance: 100
+  AutoAssistEngagePercent: 98
+  # (melee/ranged/off)
+  type: melee
+  enabled: true
+SwapItems:
   Main:
 LifeSupport:
 Burn:
+  LongBurn:
   FullBurn:
   QuickBurn:
-  LongBurn:
-UseItems:
-  Shrink: 
 Aura:
-  Aura:
   CastAura: false
-
-

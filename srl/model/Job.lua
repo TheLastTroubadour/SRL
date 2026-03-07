@@ -13,13 +13,20 @@ function Job:new(targetId, targetName, name, type, priority, gem)
     self.targetName = targetName
     self.name = name --name of spell/ability/aa
     self.type     = type
+    self.subtype = nil
     self.priority = priority or 0
     self.gem      = gem -- optional
     self.generation = nil
     -- Unique identity for duplicate protection
     self.key = name .. ":" .. tostring(targetId)
+    self.abilityHasDebuff = false
 
     return self
+end
+
+function Job:setTargetId(targetId)
+    self.targetId = targetId
+    self.key = self.name .. ":" .. tostring(targetId)
 end
 
 return Job

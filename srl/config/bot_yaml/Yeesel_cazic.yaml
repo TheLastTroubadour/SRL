@@ -3,21 +3,13 @@ General:
   debugLevel: off
   medstop: 100
   medstart: 70
-
 LifeSupport:
-
 Burn:
   QuickBurn:
-
   LongBurn:
-
   FullBurn:
-
-
 UseItems:
   Shrink: 
-
-
 AssistSettings:
   rangedDistance: 100
   AutoAssistEngagePercent: 98
@@ -35,9 +27,8 @@ Cleric:
   CelestialRegenarationPct: 0
   AutoYaulp: false
   YaulpSpell:
-
-
 Heals:
+  Enabled: true
   Tanks:
     - Weetel
   ImportantBot:
@@ -59,13 +50,9 @@ Heals:
         threshold: 50
         priority: 400
         gem: 1
-
-
 _version: 1
-
 Buffs:
   InstantBuff:
-
   SelfBuff:
     - gem: 2
       spell: Center
@@ -78,12 +65,8 @@ Buffs:
         - Booguu
       spell: Center
       gem: 2
-
   CombatBuff:
-
   GroupBuff:
-
-
 SwapItems:
   Main: 
 

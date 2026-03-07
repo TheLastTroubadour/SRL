@@ -1,4 +1,7 @@
+local mq = require 'mq'
 local State = {}
+
+State.lastActivity = mq.gettime()
 
 State.assist = {
     generation = 0,
@@ -6,13 +9,14 @@ State.assist = {
     scope      = nil,
     active = false,
     sender = nil,
-    assignedTargetId = nil
 }
+
 
 --Combat State
 State.combat = {
     combatState = false
 }
+
 
 -- ===== Follow State =====
 State.follow = {
@@ -52,12 +56,13 @@ end
 
 function State:stopAssist()
     self.assist.active = false
+    self.assist.targetID = nil
+    self.assist.sender = nil
 end
 
 function State:updateAssistState(payload)
     self.assist.generation = self.assist.generation + 1
     self.assist.targetID = payload.id
-    self.assist.assignedTargetId = payload.id
     self.assist.sender = payload.sender
     self.assist.active = true
 end
@@ -75,5 +80,10 @@ end
 function State:setMedMode(state)
     self.caster.medMode = state
 end
+
+function State:updateLastActivity()
+    self.lastActivity = mq.gettime()
+end
+
 
 return State
