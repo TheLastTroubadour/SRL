@@ -57,7 +57,7 @@ function CombatService:handleMed()
     local medEnd = self.config:get('General.medStop') or 100
 
     -- never med during combat
-    if State.assist.targetID then
+    if State.assist.targetId then
         if mq.TLO.Me.Sitting() then
             mq.cmd("/stand")
         end
@@ -144,7 +144,7 @@ end
 
 function CombatService:assist()
 
-    local targetId = State.assist.targetID
+    local targetId = State.assist.targetId
 
     local assistType = self.config:get('AssistSettings.type') or 'Off'
 
@@ -152,14 +152,14 @@ function CombatService:assist()
         return
     end
 
-    if not State.assist.targetID then return end
+    if not State.assist.targetId then return end
 
-    if not mq.TLO.Spawn('id ' .. State.assist.targetID)() then
+    if not mq.TLO.Spawn('id ' .. State.assist.targetId)() then
         State:stopAssist()
         return
     end
 
-    if State.assist.targetID ~= mq.TLO.Target.ID() then
+    if State.assist.targetId ~= mq.TLO.Target.ID() then
         print("New assist target:", targetId)
 
         -- Clear any queued combat jobs
@@ -184,7 +184,7 @@ end
 
 function CombatService:update()
 
-    if not State.assist.targetID then
+    if not State.assist.targetId then
         self:handleMed()
         return
     end
@@ -193,13 +193,13 @@ function CombatService:update()
     if hasAggro then
         self.debuffService:update()
         for _, entry in ipairs(self.rotation.spellRotation) do
-            entry:setTargetId(State.assist.targetID)
+            entry:setTargetId(State.assist.targetId)
             if self:canUse(entry) then
                 self.castService:enqueue(entry)
             end
         end
         for _, entry in ipairs(self.rotation.abilityRotation) do
-            entry:setTargetId(State.assist.targetID)
+            entry:setTargetId(State.assist.targetId)
             if self:canUse(entry) then
                 self.castService:enqueue(entry)
             end
@@ -219,8 +219,8 @@ function CombatService:shouldEngage()
 
     if target.Type() ~= "NPC" then return false end
     if target.Dead() then
-        if target.ID() == State.assist.targetID then
-            State.assist.targetID = nil
+        if target.ID() == State.assist.targetId then
+            State.assist.targetId = nil
         end
     return false end
 

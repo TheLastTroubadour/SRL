@@ -22,6 +22,7 @@ local HealService = require 'srl.service.HealService'
 local TradeService = require 'srl.service.TradeService'
 local RoleService = require 'srl.service.RoleService'
 local DebuffService = require 'srl.service.DebuffService'
+local Context = require 'srl.perception.CombatContext'
 PackageMan.Require('lyaml')
 PackageMan.Require('luafilesystem', 'lfs')
 --needs to be after lyaml by packageman
@@ -41,7 +42,7 @@ local function DrawDebugWindow(castService, buffService, healService, combatServ
 
             if State and State.assist then
                 ImGui.Text("Assist Generation: " .. tostring(State.assist.generation))
-                ImGui.Text("Assist Target Id: " .. tostring(State.assist.targetID))
+                ImGui.Text("Assist Target Id: " .. tostring(State.assist.targetId))
                 ImGui.Text("Has Host X Target: " .. tostring(combatService:hasHostileXTarget()))
             else
                 ImGui.Text("Assist Generation: nil")
@@ -362,15 +363,16 @@ local function mainLoop()
         mq.doevents()
         --order matters
         --Process network replies and resolve promises
+        local ctx = Context:build(state)
         busService:update()
         --resume any coroutines waiting on await
         scheduler:run()
 
-        healService:update()
-        buffService:update()
-        combatService:update()
-        followService:checkFollow()
-        TradeService:update()
+        healService:update(ctx)
+        buffService:update(ctx)
+        combatService:update(ctx)
+        followService:checkFollow(ctx)
+        TradeService:update(ctx)
         mq.delay(50)
 
         Logging.Debug("Main While loop End")

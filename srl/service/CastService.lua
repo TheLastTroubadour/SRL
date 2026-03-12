@@ -248,7 +248,7 @@ function CastService:clearCombatQueue()
 end
 
 function CastService:interruptCasting()
-    if mq.TLO.Me.Casting() and mq.TLO.Target.ID() == State.assist.targetID then
+    if mq.TLO.Me.Casting() and mq.TLO.Target.ID() == State.assist.targetId then
         mq.cmd('/interrupt')
     end
 end

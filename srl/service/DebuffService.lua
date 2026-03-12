@@ -22,7 +22,7 @@ end
 
 function DebuffService:update()
 
-    local targetId = State.assist.targetID
+    local targetId = State.assist.targetId
 
     if not targetId then return end
 

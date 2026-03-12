@@ -5,7 +5,7 @@ State.lastActivity = mq.gettime()
 
 State.assist = {
     generation = 0,
-    targetID   = nil,
+    targetId   = nil,
     scope      = nil,
     active = false,
     sender = nil,
@@ -56,13 +56,13 @@ end
 
 function State:stopAssist()
     self.assist.active = false
-    self.assist.targetID = nil
+    self.assist.targetId = nil
     self.assist.sender = nil
 end
 
 function State:updateAssistState(payload)
     self.assist.generation = self.assist.generation + 1
-    self.assist.targetID = payload.id
+    self.assist.targetId = payload.id
     self.assist.sender = payload.sender
     self.assist.active = true
 end
@@ -73,7 +73,7 @@ end
 
 function State:clearCombatState()
     self.assist.generation = self.assist.generation + 1
-    self.assist.targetID = nil
+    self.assist.targetId = nil
     self.assist.active = false
 end
 
