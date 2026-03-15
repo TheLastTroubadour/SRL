@@ -26,6 +26,13 @@ Wizard:
   Harvest:
     spells:
       spell:
+Jolts:
+  JoltThreshold: 80
+  LockoutThreshold: 100
+  Main:
+    - spell: Concussion # caster
+      gem: 5
+      aggroThreshold: 80
 Nukes:
   Main:
     - spell: Conflagration

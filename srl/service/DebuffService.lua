@@ -1,6 +1,7 @@
 local mq = require('mq')
 local State = require 'srl.core.State'
 local TargetService = require 'srl.service.TargetService'
+local TableUtil = require 'srl.util.TableUtil'
 local Job = require 'srl.model.Job'
 
 local DebuffService = {}
@@ -11,10 +12,11 @@ function DebuffService:new(castService, config)
 
     self.config = config
     self.castService = castService
-    self.debuffsOnAssist = config:get('Debuff.DebuffOnAssist.Main') or {}
+    self.debuffsOnAssist = self.config:get('Debuff.DebuffOnAssist.Main') or {}
+
     self.debuffsOnCommand = {}
-    self.debuffEnabledForXTargets = config:get('Debuff.DebuffTargetsOnXTarEnabled') or false
-    self.minNumberOfTargetsToStartXTargetDebuff = config:get('Debuff.MinimumAmountToStartDebuffOnXTar') or 2
+    self.debuffEnabledForXTargets = self.config:get('Debuff.DebuffTargetsOnXTarEnabled') or false
+    self.minNumberOfTargetsToStartXTargetDebuff = self.config:get('Debuff.MinimumAmountToStartDebuffOnXTar') or 2
     self.retryTimers = {}
 
     return self

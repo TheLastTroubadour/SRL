@@ -23,12 +23,22 @@ local TradeService = require 'srl.service.TradeService'
 local RoleService = require 'srl.service.RoleService'
 local DebuffService = require 'srl.service.DebuffService'
 local Context = require 'srl.perception.CombatContext'
+local DecisionEngine = require 'srl.decision.DecisionEngine'
+local ResourceDecision = require 'srl.decision.actions.Resource'
+local NukeDecision = require 'srl.decision.actions.Nuke'
+local AssistDecision = require 'srl.decision.actions.Assist'
+local HealDecision = require 'srl.decision.actions.Heal'
+local DebuffDecision = require 'srl.decision.actions.Debuff'
+local AbilityDecision = require 'srl.decision.actions.Abilities'
 PackageMan.Require('lyaml')
 PackageMan.Require('luafilesystem', 'lfs')
 --needs to be after lyaml by packageman
 local Config = require 'srl.config.Config'
+local StateService = require 'srl.service.StateService'
 
-local function DrawDebugWindow(castService, buffService, healService, combatService)
+RunTime = {}
+
+local function DrawDebugWindow(castService, buffService, healService, combatService, nukeDecision)
 
     ImGui.SetNextWindowSize(400, 300, ImGuiCond_FirstUseEver)
 
@@ -40,6 +50,22 @@ local function DrawDebugWindow(castService, buffService, healService, combatServ
 
         if DEBUG then
 
+            ImGui.Text("Decision Engine")
+            if RunTime and RunTime.engine then
+                for _ , entry in ipairs(RunTime.engine.debug) do
+                    ImGui.Text(string.format("N: %s S: %.2f", entry.name, entry.score))
+                end
+            end
+
+            if Context and Context.assist then
+                ImGui.Text(string.format("Id: %s myTarId: %s asDis: %s asDisDead: %s",
+                        tostring(Context.assist.Id),
+                        tostring(Context.myCurrentTargetId),
+                        tostring(Context.assist.distance),
+                        tostring(Context.assist.dead)
+                ))
+
+            end
             if State and State.assist then
                 ImGui.Text("Assist Generation: " .. tostring(State.assist.generation))
                 ImGui.Text("Assist Target Id: " .. tostring(State.assist.targetId))
@@ -155,7 +181,7 @@ local function DrawDebugWindow(castService, buffService, healService, combatServ
                 ImGui.Text("Abilities")
                 ImGui.BeginChild("Ability Rotation")
                 local abilityRotation = combatService:getAbilityRotation()
-               for _, t in ipairs(abilityRotation) do
+                for _, t in ipairs(abilityRotation) do
 
 
                     ImGui.Text(string.format(
@@ -169,11 +195,17 @@ local function DrawDebugWindow(castService, buffService, healService, combatServ
 
                 ImGui.Separator()
 
+
+
+            end
+
+            ImGui.Separator()
+            ImGui.Text("Nuke Decision")
+            if (nukeDecision) then
                 ImGui.Text("NukeRotation")
                 ImGui.BeginChild("Nuke Rotation")
-                    local nukeRotation = combatService:getSpellRotation()
-               for _, t in ipairs(nukeRotation) do
-
+                local nukeRotation = nukeDecision:getNukeList()
+                for _, t in ipairs(nukeRotation) do
 
                     ImGui.Text(string.format(
                             "%s | %s",
@@ -184,7 +216,6 @@ local function DrawDebugWindow(castService, buffService, healService, combatServ
                 end
 
                 ImGui.EndChild()
-
             end
 
 
@@ -299,6 +330,7 @@ local function DrawDebugWindow(castService, buffService, healService, combatServ
     ImGui.End()
 end
 
+
 -- MAIN MACRO LOOP
 local function mainLoop()
     Logging.Debug("Main Loop Start")
@@ -348,9 +380,28 @@ local function mainLoop()
             followService:resumeFollow()
     end)
 
+    local resourceDecision = ResourceDecision:new()
+    local nukeDecision = NukeDecision:new(config)
+    local assistDecision = AssistDecision:new()
+    local healDecision = HealDecision:new(config)
+    local debuffDecision = DebuffDecision:new()
+    local abilityDecision = AbilityDecision:new(config)
+    local context = Context:new(config)
+
+    local engine = DecisionEngine:new({
+        resourceDecision,
+        nukeDecision,
+        assistDecision,
+        healDecision,
+        debuffDecision,
+        abilityDecision
+    })
+
+    RunTime.engine = engine
+
     mq.imgui.init("CombatDebugUI", function()
         local ok, err = pcall(function()
-            DrawDebugWindow(castService, buffService, healService, combatService)
+            DrawDebugWindow(castService, buffService, healService, combatService, nukeDecision)
         end)
 
         if not ok then
@@ -361,16 +412,21 @@ local function mainLoop()
     while true do
         Logging.Debug("Main While loop Start")
         mq.doevents()
+
+        --StateService:update(State)
         --order matters
         --Process network replies and resolve promises
-        local ctx = Context:build(state)
+        local ctx = context:build(State)
+        local action = engine:evaluate(ctx)
+        if action then
+            action:execute(ctx)
+        end
         busService:update()
         --resume any coroutines waiting on await
         scheduler:run()
 
-        healService:update(ctx)
         buffService:update(ctx)
-        combatService:update(ctx)
+        --combatService:update(ctx)
         followService:checkFollow(ctx)
         TradeService:update(ctx)
         mq.delay(50)
@@ -378,5 +434,7 @@ local function mainLoop()
         Logging.Debug("Main While loop End")
     end
 end
+
+
 
 mainLoop();

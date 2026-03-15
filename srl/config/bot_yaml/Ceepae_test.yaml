@@ -41,15 +41,15 @@ DotsOnCommand:
   Main:
 DotsOnAssist:
   Main:
-    - spell: Drowsy
-      gem: 4
+    - spell: Togor's Insects
+      gem: 1
 Debuff:
   DebuffTargetsOnXTarEnabled: true
   MinimumAmountToStartDebuffOnXTar : 2
   DebuffOnXTar:
     Main:
-      - spell: Drowsy
-        gem: 4
+      - spell: Togor's Insects
+        gem: 1
         priority: 180
       - spell: Malaisement
         gem: 3
@@ -57,8 +57,8 @@ Debuff:
     Main:
   DebuffOnAssist:
     Main:
-      - spell: Drowsy
-        gem: 4
+      - spell: Togor's Insects
+        gem: 1
         priority: 180
       - spell: Malaisement
         gem: 3
@@ -76,7 +76,7 @@ UseItems:
   Shrink:
 Buffs:
   BotBuff:
-    - spell: Quickness
+    - spell: Alacrity
       charactersToBuff:
         - Heezel
         - Booguu
@@ -102,7 +102,7 @@ Buffs:
         - Heezel
         - Weetel
         - Deepel
-      gem: 7
+      gem: 4
     - spell: Talisman of Tnarg
       charactersToBuff:
         - Yeesel

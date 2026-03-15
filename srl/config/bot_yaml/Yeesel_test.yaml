@@ -13,17 +13,17 @@ Heals:
     - Ceepa
   Spells:
     important:
-      - spell: Greater Healing
+      - spell: Superior Healing
         threshold: 80
         priority: 430
         gem: 2
     tank:
-      - spell: Superior Healing
+      - spell: Healing Light
         threshold: 70
         priority: 450
         gem: 1
     normal:
-      - spell: Greater Healing
+      - spell: Superior Healing
         threshold: 70
         priority: 400
         gem: 2
@@ -57,20 +57,22 @@ UseItems:
 Buffs:
   InstantBuff:
   SelfBuff:
-    - gem: 8
-      spell: Valor
+    #- gem: 8
+    #  spell: Valor
     - gem: 7
-      spell: Symbol of Pinzarn
-  BotBuff:
-    - charactersToBuff:
-        - Ceepae
-        - Heezel
-        - Weetel
-        - Deepel
-        - Booguu
-      spell: Valor
+      spell: Blessing of Temperance
+    - spell: Blessing of Faith
       gem: 8
-    - spell: Symbol of Pinzarn
+  BotBuff:
+    #- charactersToBuff:
+    #    - Ceepae
+    #    - Heezel
+    #    - Weetel
+    #    - Deepel
+    #    - Booguu
+    #  spell: Valor
+    #  gem: 8
+    - spell: Blessing of Temperance
       gem: 7
       charactersToBuff:
         - Ceepae
@@ -78,5 +80,11 @@ Buffs:
         - Weetel
         - Deepel
         - Booguu
+
+    - spell: Blessing of Faith
+      gem: 8
+      charactersToBuff:
+        - Deepel
+        - Ceepae
   CombatBuff:
   GroupBuff:

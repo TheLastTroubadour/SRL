@@ -14,13 +14,18 @@ local MELEE_CLASSES = {
     ROG = "ROG",
 }
 
-local CASTER_CLASSES = {
+local HYBRID_CLASSES = {
+    BRD = "BRD",
     BST = "BST",
-    DRU = "DRU",
+    PAL = "PAL",
+    SHD = "SHD",
+    RNG = "RNG",
+}
+
+local CASTER_CLASSES = {
     ENC = "ENC",
     MAG = "MAG",
     NEC = "NEC",
-    SHM = "SHM",
     WIZ = "WIZ"
 }
 
@@ -72,6 +77,10 @@ function RoleService:getRoles()
 
     if DOT_CLASSES[classShortName] then
         roles.doter = 'doter'
+    end
+
+    if HYBRID_CLASSES[classShortName] then
+        roles.hybrid = 'hybrid'
     end
 
     return roles

@@ -1,6 +1,7 @@
 local CommandBus = {}
 local mq = require 'mq'
 local State = require 'srl.core.State'
+local TableUtil = require 'srl.util.TableUtil'
 CommandBus.handlers = {}
 
 function CommandBus:init()
@@ -97,7 +98,6 @@ function CommandBus:dispatch(command, payload)
         print("No handler registered for:", command)
         return
     end
-
     if handler then
         handler(payload)
     end

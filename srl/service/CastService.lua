@@ -100,6 +100,7 @@ function CastService:startWorker()
                 end
                 self.currentlyInFlight = nil
                 self.queuedKeys[job.key] = nil
+                self.queuedKeys[job.name] = nil
             end
         end
     end)
@@ -180,7 +181,6 @@ function CastService:castSpell(job)
             return
         end
     end
-    self:memSpellIfNeeded(entry)
     return self:srlCast(job)
 end
 
@@ -227,7 +227,6 @@ function CastService:srlCast(job)
         mq.cmd("/stick off");
         mq.cmd("/afollow off")
         local castTime = mq.TLO.Spell(job.name).CastTime.TotalSeconds() * 1000 + 1500
-        State:updateLastActivity()
         mq.cmdf("/casting \"%s\"|%s", job.name, job.gem)
         mq.delay(castTime)
         local result = mq.TLO.Cast.Result()
