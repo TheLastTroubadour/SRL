@@ -39,3 +39,11 @@ Aura:
 _version: 1
 SwapItems:
   Main:
+CrowdControl:
+  Enabled: true
+  RecastBuffer: 10   # seconds before expiry to re-mez
+  MaxTankedMobs: 0
+  Spells:
+    - spell: Sionachie's Dreams
+      gem: 8
+      priority: 1

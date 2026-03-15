@@ -44,7 +44,12 @@ local DEBUFF_CLASSES = {
     SHM = "SHM",
     WIZ = "WIZ",
 }
- local DOT_CLASSES = {
+local CC_CLASSES = {
+    BRD = "BRD",
+    ENC = "ENC",
+}
+
+local DOT_CLASSES = {
      BST = "BST",
      DRU = "DRU",
      ENC = "ENC",
@@ -81,6 +86,14 @@ function RoleService:getRoles()
 
     if HYBRID_CLASSES[classShortName] then
         roles.hybrid = 'hybrid'
+    end
+
+    if CC_CLASSES[classShortName] then
+        roles.cc = 'cc'
+    end
+
+    if classShortName == 'BRD' then
+        roles.bard = 'bard'
     end
 
     return roles

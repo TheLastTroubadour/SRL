@@ -11,6 +11,7 @@ Abilities:
   - Ability: Leg Cut
     type: disc
     debuff: true
+    reagent: Bonesplicer's Axe
 UseItems:
   Shrink:
 General:

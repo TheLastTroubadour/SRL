@@ -2,17 +2,6 @@ local mq = require('mq')
 
 local InviteService = {}
 
-function InviteService:init()
-
-    mq.event('GroupInvite', '#1# invites you to join a group.', function(inviter)
-        self:handleGroupInvite(inviter)
-    end)
-
-    mq.event('RaidInvite', '#1# invites you to join a raid.', function(inviter)
-        self:handleRaidInvite(inviter)
-    end)
-end
-
 function InviteService:handleRaidInvite(inviter)
 
     if mq.TLO.Me.Raided() then return end

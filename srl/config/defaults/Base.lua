@@ -44,15 +44,11 @@ return {
 
     },
     Burn = {
-        QuickBurn = {
-
-        },
-        LongBurn = {
-
-        },
-        FullBurn = {
-
-        }
-
+        QuickBurn = {},
+        LongBurn  = {},
+        FullBurn  = {}
+    },
+    Epic = {
+        name = ''
     }
 }

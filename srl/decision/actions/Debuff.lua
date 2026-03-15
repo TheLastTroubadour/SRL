@@ -40,7 +40,7 @@ function DebuffDecision:score(ctx)
         local slots = mq.TLO.Me.XTargetSlots()
         for i = 1, slots do
             local xt = mq.TLO.Me.XTarget(i)
-            if xt() and xt.Type() == "NPC" and not xt.Dead() and xt.Aggressive() and xt.ID() ~= ctx.assist.Id then
+            if xt() and xt.Type() == "NPC" and not xt.Dead() and xt.Aggressive() and xt.ID() ~= tonumber(ctx.assist.Id) then
                 for _, debuff in ipairs(ctx.self.debuff.onAssistSpells) do
                     local key = debuff.spell .. ":" .. tostring(xt.ID())
                     if self:needsCast(key, debuff.spell) then

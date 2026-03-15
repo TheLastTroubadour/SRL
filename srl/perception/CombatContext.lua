@@ -100,7 +100,7 @@ function Context:build(state)
             for i = 1, ctx.self.heal.group.members do
                 local m = mq.TLO.Group.Member(i)
 
-                if m() and m.Spawn() then
+                if m() and m.Spawn() and not m.Dead() then
                     local role = self:getHealerRole(m.CleanName())
                     table.insert(ctx.self.heal.group.memberStatus, {
                         id = m.ID(),

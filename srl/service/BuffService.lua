@@ -237,6 +237,12 @@ function BuffService:handlePollPromise(target, buffEntry, promise)
     end)
 end
 
+function BuffService:reset()
+    self.cooldowns  = {}
+    self.nextCheck  = {}
+    self.requested  = {}
+end
+
 function BuffService:setTakeHoldCooldownOnJob(job)
     local k = key(job.targetName, job.name)
     if self.nextCheck[k] then

@@ -25,6 +25,12 @@ State.follow = {
     followId = nil,
 }
 
+-- ===== Move State =====
+State.move = {
+    active   = false,
+    targetId = nil,
+}
+
 -- ===== Burn State =====
 State.burn = {
     active     = false,
@@ -79,6 +85,16 @@ end
 
 function State:setMedMode(state)
     self.caster.medMode = state
+end
+
+function State:setMove(payload)
+    self.move.active   = true
+    self.move.targetId = payload and payload.id or nil
+end
+
+function State:clearMove()
+    self.move.active   = false
+    self.move.targetId = nil
 end
 
 function State:updateLastActivity()

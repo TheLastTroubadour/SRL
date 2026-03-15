@@ -51,6 +51,13 @@ end
 function AbilityDecision:canUse(entry, ctx)
     if not entry or not entry.name then return false end
 
+    -- reagent check: skip if required item not in inventory
+    if entry.reagent then
+        if not mq.TLO.FindItem('=' .. entry.reagent)() then
+            return false
+        end
+    end
+
     -- debuff-type abilities: skip if target already has the effect
     if entry.abilityHasDebuff then
         if ctx.myCurrentTargetId == entry.targetId and mq.TLO.Target.Buff(entry.name)() then
@@ -84,6 +91,9 @@ function AbilityDecision:loadAbilities()
             local job = Job:new(nil, nil, tostring(name), jobType, priority, nil)
             if v.debuff then
                 job.abilityHasDebuff = true
+            end
+            if v.reagent then
+                job.reagent = v.reagent
             end
             table.insert(jobList, job)
         end

@@ -30,11 +30,19 @@ local AssistDecision = require 'srl.decision.actions.Assist'
 local HealDecision = require 'srl.decision.actions.Heal'
 local DebuffDecision = require 'srl.decision.actions.Debuff'
 local AbilityDecision = require 'srl.decision.actions.Abilities'
+local CCDecision = require 'srl.decision.actions.CrowdControl'
+local MovementDecision = require 'srl.decision.actions.Movement'
 PackageMan.Require('lyaml')
 PackageMan.Require('luafilesystem', 'lfs')
 --needs to be after lyaml by packageman
 local Config = require 'srl.config.Config'
 local StateService = require 'srl.service.StateService'
+local EventRegistry = require 'srl.core.EventRegistry'
+local InviteService = require 'srl.service.InviteService'
+local BurnService = require 'srl.service.BurnService'
+local CureService = require 'srl.service.CureService'
+local CureDecision = require 'srl.decision.actions.Cure'
+local MelodyService = require 'srl.service.MelodyService'
 
 RunTime = {}
 
@@ -193,6 +201,59 @@ local function DrawDebugWindow()
             ImGui.EndChild()
         end
 
+        ImGui.Separator()
+
+        -- CC Decision
+        ImGui.Text("CC Decision")
+        local ccDecision = RunTime.ccDecision
+        if ccDecision then
+            local ctx2 = RunTime.ctx
+            ImGui.Text(string.format("Role: %s  Enabled: %s  Casting: %s",
+                tostring(ctx2 and ctx2.roles and ctx2.roles['cc']),
+                tostring(ccDecision.config:get('CrowdControl.Enabled')),
+                tostring(ctx2 and ctx2.casting)
+            ))
+            ImGui.Text(string.format("Spells loaded: %d  WaitingResult: %s",
+                #ccDecision.spells,
+                tostring(ccDecision.waitingForResult)
+            ))
+            if ccDecision.spells[1] then
+                local s = ccDecision.spells[1]
+                ImGui.Text(string.format("Spell[1]: %s gem:%s ready:%s",
+                    tostring(s.spell),
+                    tostring(s.gem),
+                    tostring(mq.TLO.Cast.Ready(s.spell)())
+                ))
+            end
+            -- XTarget scan
+            local xtTotal, xtNPC, xtAggro = 0, 0, 0
+            local slots = mq.TLO.Me.XTargetSlots()
+            for i = 1, slots do
+                local xt = mq.TLO.Me.XTarget(i)
+                if xt() then
+                    xtTotal = xtTotal + 1
+                    if xt.Type() == "NPC" and not xt.Dead() then
+                        xtNPC = xtNPC + 1
+                        if xt.Aggressive() then xtAggro = xtAggro + 1 end
+                    end
+                end
+            end
+            ImGui.Text(string.format("XTar slots:%d  NPCs:%d  Aggressive:%d", xtTotal, xtNPC, xtAggro))
+            ImGui.Text(string.format("Pending: %s  Spell: %s",
+                tostring(ccDecision.pendingTarget),
+                tostring(ccDecision.pendingSpell and ccDecision.pendingSpell.spell)
+            ))
+            local now = mq.gettime()
+            ImGui.BeginChild("MezzedList", 0, 80, true)
+            local any = false
+            for id, recastAt in pairs(ccDecision.mezzed) do
+                any = true
+                ImGui.Text(string.format("id:%s | recast in %.1fs", tostring(id), math.max(0, recastAt - now) / 1000))
+            end
+            if not any then ImGui.Text("No mezzed targets") end
+            ImGui.EndChild()
+        end
+
     end
 
     ImGui.End()
@@ -202,7 +263,7 @@ end
 -- MAIN MACRO LOOP
 local function mainLoop()
     Logging.Debug("Main Loop Start")
-    init.setup();
+    --init.setup();
 
     local config = Config:new(nil)
 
@@ -220,6 +281,13 @@ local function mainLoop()
     local combatController = CombatController:new(combatService)
     local buffService = BuffService:new(busService, scheduler, combatService, castService, config)
     castService.buffService = buffService
+
+    local inviteService = InviteService
+    EventRegistry:new():init({
+        buffService   = buffService,
+        inviteService = inviteService,
+    })
+
     CommandBus:init()
     CommandBus:register('Assist', function(payload)
         combatController:assist(payload)
@@ -242,6 +310,76 @@ local function mainLoop()
         followController:stop()
     end)
 
+    CommandBus:register('Move', function(payload)
+        State:setMove(payload)
+    end)
+
+    CommandBus:register('CCMaxMobs', function(payload)
+        ccDecision:setMaxTankedMobs(payload.n)
+    end)
+
+    CommandBus:register('BackOff', function()
+        State:clearCombatState()
+        mq.cmd('/attack off')
+        mq.cmd('/stick off')
+        mq.cmd('/afollow off')
+        mq.cmd('/stopcast')
+        mq.cmd('/cleartarget')
+    end)
+
+    local burnService = BurnService:new(config)
+    local cureService = CureService:new()
+    local cureDecision = CureDecision:new(config)
+    local melodyService = MelodyService:new(config)
+
+    CommandBus:register('QuickBurn', function()
+        burnService:activate('Burn.QuickBurn')
+    end)
+
+    CommandBus:register('LongBurn', function()
+        burnService:activate('Burn.LongBurn')
+    end)
+
+    CommandBus:register('FullBurn', function()
+        burnService:activate('Burn.FullBurn')
+    end)
+
+    CommandBus:register('EpicBurn', function()
+        burnService:clickEpic()
+    end)
+
+    CommandBus:register('Lesson', function()
+        mq.cmd('/alt activate "Lesson of the Devoted"')
+    end)
+
+    CommandBus:register('Armor', function()
+        mq.cmd('/alt activate "Armor of Experience"')
+    end)
+
+    CommandBus:register('Staunch', function()
+        mq.cmd('/alt activate "Staunch Recovery"')
+    end)
+
+    CommandBus:register('Intensity', function()
+        mq.cmd('/alt activate "Intensity of the Resolute"')
+    end)
+
+    CommandBus:register('Expedient', function()
+        mq.cmd('/alt activate "Expedient Recovery"')
+    end)
+
+    CommandBus:register('Throne', function()
+        mq.cmd('/alt activate "Throne of Heroes"')
+    end)
+
+    CommandBus:register('PlayMelody', function(payload)
+        if payload.name then melodyService:play(payload.name) end
+    end)
+
+    CommandBus:register('StopMelody', function()
+        melodyService:stop()
+    end)
+
     CommandBus:register("COMBAT_ENDED", function()
             State:clearCombatState()
             castService:interruptCasting()
@@ -254,13 +392,22 @@ local function mainLoop()
     local healDecision = HealDecision:new(config)
     local debuffDecision = DebuffDecision:new(config)
     local abilityDecision = AbilityDecision:new(config)
+    local ccDecision = CCDecision:new(config)
+    local movementDecision = MovementDecision:new()
     local context = Context:new(config)
 
+    CommandBus:register('NeedCure', function(payload)
+        cureDecision:addRequest(payload.id, payload.name, payload.types)
+    end)
+
     local engine = DecisionEngine:new({
+        movementDecision,
         resourceDecision,
+        ccDecision,
         nukeDecision,
         assistDecision,
         healDecision,
+        cureDecision,
         debuffDecision,
         abilityDecision
     })
@@ -272,6 +419,7 @@ local function mainLoop()
     RunTime.abilityDecision = abilityDecision
     RunTime.healDecision = healDecision
     RunTime.debuffDecision = debuffDecision
+    RunTime.ccDecision = ccDecision
 
     mq.imgui.init("CombatDebugUI", function()
         local ok, err = pcall(DrawDebugWindow)
@@ -299,8 +447,9 @@ local function mainLoop()
 
         buffService:update(ctx)
         --combatService:update(ctx)
-        followService:checkFollow(ctx)
+        --followService:checkFollow(ctx)  -- replaced by MovementDecision
         TradeService:update(ctx)
+        cureService:update()
         mq.delay(50)
 
         Logging.Debug("Main While loop End")
