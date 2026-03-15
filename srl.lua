@@ -38,291 +38,159 @@ local StateService = require 'srl.service.StateService'
 
 RunTime = {}
 
-local function DrawDebugWindow(castService, buffService, healService, combatService, nukeDecision)
+local function DrawDebugWindow()
 
-    ImGui.SetNextWindowSize(400, 300, ImGuiCond_FirstUseEver)
+    ImGui.SetNextWindowSize(400, 600, ImGuiCond_FirstUseEver)
 
     if ImGui.Begin("Combat Debug") then
 
         DEBUG = ImGui.Checkbox("Debug Enabled", DEBUG)
+        ImGui.Separator()
+
+        if not DEBUG then
+            ImGui.Text("Debug Disabled")
+            ImGui.End()
+            return
+        end
+
+        -- Decision Engine
+        ImGui.Text("Decision Engine")
+        if RunTime.engine then
+            for _, entry in ipairs(RunTime.engine.debug) do
+                ImGui.Text(string.format("  %s | %.2f", entry.name, entry.score))
+            end
+        end
 
         ImGui.Separator()
 
-        if DEBUG then
+        -- Assist / State
+        local ctx = RunTime.ctx
+        if ctx and ctx.assist then
+            ImGui.Text(string.format("Assist Id: %s  Dead: %s  Dist: %s",
+                tostring(ctx.assist.Id),
+                tostring(ctx.assist.dead),
+                tostring(ctx.assist.distance)
+            ))
+            ImGui.Text(string.format("My Target: %s  Casting: %s  Aggro: %s%%",
+                tostring(ctx.myCurrentTargetId),
+                tostring(ctx.casting),
+                tostring(mq.TLO.Me.PctAggro())
+            ))
+        end
+        if State and State.assist then
+            ImGui.Text("Assist Gen: " .. tostring(State.assist.generation))
+        end
+        if State and State.follow then
+            ImGui.Text(string.format("Follow Id: %s  Active: %s",
+                tostring(State.follow.followId),
+                tostring(State.follow.active)
+            ))
+        end
 
-            ImGui.Text("Decision Engine")
-            if RunTime and RunTime.engine then
-                for _ , entry in ipairs(RunTime.engine.debug) do
-                    ImGui.Text(string.format("N: %s S: %.2f", entry.name, entry.score))
-                end
+        ImGui.Separator()
+
+        -- Buff Service queue (BuffService still uses CastService)
+        local castService = RunTime.castService
+        local buffService = RunTime.buffService
+        if castService then
+            ImGui.Text("Buff Queue: " .. #castService.queue)
+            ImGui.BeginChild("QueueList", 0, 100, true)
+            if #castService.queue == 0 then
+                ImGui.Text("Empty")
             end
-
-            if Context and Context.assist then
-                ImGui.Text(string.format("Id: %s myTarId: %s asDis: %s asDisDead: %s",
-                        tostring(Context.assist.Id),
-                        tostring(Context.myCurrentTargetId),
-                        tostring(Context.assist.distance),
-                        tostring(Context.assist.dead)
+            for i, job in ipairs(castService.queue) do
+                ImGui.Text(string.format("%d) %s | T:%s | P:%s",
+                    i, tostring(job.name), tostring(job.targetId), tostring(job.priority)
                 ))
-
-            end
-            if State and State.assist then
-                ImGui.Text("Assist Generation: " .. tostring(State.assist.generation))
-                ImGui.Text("Assist Target Id: " .. tostring(State.assist.targetId))
-                ImGui.Text("Has Host X Target: " .. tostring(combatService:hasHostileXTarget()))
-            else
-                ImGui.Text("Assist Generation: nil")
-            end
-
-            if State and State.follow then
-                ImGui.Text("Follow Id: " .. tostring(State.follow.followId))
-                ImGui.Text("Follow State: " .. tostring(State.follow.active))
-            end
-
-            if castService and castService.currentlyInFlight then
-                ImGui.Text("In Flight: " .. tostring(castService.currentlyInFlight.spell))
-            else
-                ImGui.Text("In Flight: None")
-            end
-
-            ImGui.Separator()
-            ImGui.Text("Queue N: " .. #castService.queue)
-
-            ImGui.BeginChild("QueueList", 0, 150, true)
-            if castService and castService.queue then
-                if #castService.queue == 0 then
-                    ImGui.Text("Queue Empty")
-                end
-
-                for i, job in ipairs(castService.queue) do
-                    ImGui.Text(string.format(
-                            "%d) Spell: %s | T:%s | P:%s | G:%s | K:%s",
-                            i,
-                            tostring(job.name),
-                            tostring(job.targetId),
-                            tostring(job.priority),
-                            tostring(job.generation),
-                            tostring(job.key)
-                    ))
-                end
-
             end
             ImGui.EndChild()
+        end
+
+        if buffService then
             ImGui.Separator()
             ImGui.Text("Buff Service")
-
-            if buffService then
-
-                ImGui.Text("Requested Polls: " .. #buffService.requested)
-                ImGui.Text("Cooldowns: " .. #buffService.cooldowns)
-                ImGui.Text("Next Checks: " .. #buffService.nextCheck)
-
-                ImGui.Separator()
-
-                ImGui.BeginChild("BuffRequests", 0, 120, true)
-
-                ImGui.Text("Buff Requests Outbound")
-                if (buffService.requested) then
-                    for k, v in pairs(buffService.requested) do
-                        ImGui.Text("Polling: " .. tostring(k))
-                    end
+            ImGui.BeginChild("BuffRequests", 0, 80, true)
+            if buffService.requested then
+                for k, _ in pairs(buffService.requested) do
+                    ImGui.Text("Polling: " .. tostring(k))
                 end
-                ImGui.EndChild()
-
-                ImGui.Separator()
-
-                ImGui.Text("Cooldown Display")
-
-                ImGui.BeginChild("BuffCooldowns", 0, 120, true)
-
-                if (buffService.cooldowns) then
-                    local now = mq.gettime()
-
-                    for k, v in pairs(buffService.cooldowns) do
-                        local remaining = math.max(0, v - now)
-                        ImGui.Text(string.format(
-                                "%s | cooldown: %.2fs",
-                                tostring(k),
-                                remaining / 1000
-                        ))
-                    end
-                end
-                ImGui.EndChild()
-
-                ImGui.Separator()
-
-                ImGui.Text("NextChecks Display")
-                ImGui.BeginChild("BuffNextChecks", 0, 120, true)
-
-                local now = mq.gettime()
-
-                if buffService.nextCheck then
-                    for k, v in pairs(buffService.nextCheck) do
-                        local remaining = math.max(0, v - now)
-
-                        ImGui.Text(string.format(
-                                "%s | next in %.2fs",
-                                tostring(k),
-                                remaining / 1000
-                        ))
-                    end
-                else
-                    ImGui.Text("No NextChecks")
-                end
-
-                ImGui.EndChild()
             end
+            ImGui.EndChild()
 
-            ImGui.Separator()
-            ImGui.Text("Combat Service")
-
-            if(combatService) then
-
-                ImGui.Text("Abilities")
-                ImGui.BeginChild("Ability Rotation")
-                local abilityRotation = combatService:getAbilityRotation()
-                for _, t in ipairs(abilityRotation) do
-
-
-                    ImGui.Text(string.format(
-                            "%s",
-                            t.name
-                    ))
-
+            ImGui.BeginChild("BuffCooldowns", 0, 80, true)
+            local now = mq.gettime()
+            if buffService.cooldowns then
+                for k, v in pairs(buffService.cooldowns) do
+                    ImGui.Text(string.format("%s | cd: %.1fs", tostring(k), math.max(0, v - now) / 1000))
                 end
-
-                ImGui.EndChild()
-
-                ImGui.Separator()
-
-
-
             end
+            ImGui.EndChild()
+        end
 
-            ImGui.Separator()
-            ImGui.Text("Nuke Decision")
-            if (nukeDecision) then
-                ImGui.Text("NukeRotation")
-                ImGui.BeginChild("Nuke Rotation")
-                local nukeRotation = nukeDecision:getNukeList()
-                for _, t in ipairs(nukeRotation) do
+        ImGui.Separator()
 
-                    ImGui.Text(string.format(
-                            "%s | %s",
-                            t.name,
-                            t.gem
-                    ))
-
-                end
-
-                ImGui.EndChild()
+        -- Nuke Decision
+        ImGui.Text("Nuke Decision")
+        local nukeDecision = RunTime.nukeDecision
+        if nukeDecision then
+            ImGui.BeginChild("NukeList", 0, 80, true)
+            for _, t in ipairs(nukeDecision.nukeList) do
+                ImGui.Text(string.format("Nuke: %s | gem %s", t.name, tostring(t.gem)))
             end
-
-
-            ImGui.Separator()
-            ImGui.Text("Heal Service")
-
-            if healService then
-
-                local targets = healService:collectTargets()
-                local total = 0
-
-                for _, t in ipairs(targets) do
-                    total = total + t.hp
-                end
-
-                local avg = 100
-                if #targets > 0 then
-                    avg = total / #targets
-                end
-
-                ImGui.Text(string.format("Group Average HP: %.1f", avg))
-
-                ImGui.Separator()
-
-                ImGui.Text("Targets")
-
-                ImGui.BeginChild("HealTargets", 0, 150, true)
-
-                for _, t in ipairs(targets) do
-
-                    local locked = healService:healLocked(t.id)
-
-                    ImGui.Text(string.format(
-                            "%s | HP:%d | Role:%s | Locked:%s",
-                            t.name,
-                            t.hp,
-                            t.role,
-                            tostring(locked)
-                    ))
-
-                end
-
-                ImGui.EndChild()
-
-                ImGui.Separator()
-                ImGui.Text("Heal Spell Selection")
-
-                local targets = healService:collectTargets()
-
-                ImGui.BeginChild("HealSpellEval", 0, 120, true)
-
-                for _, t in ipairs(targets) do
-
-                    local heal = healService:selectHealSpell(t)
-
-                    if heal then
-                        ImGui.Text(string.format(
-                                "%s → %s (threshold %d)",
-                                t.name,
-                                heal.spell,
-                                heal.threshold
-                        ))
-                    else
-                        ImGui.Text(string.format(
-                                "%s → no heal",
-                                t.name
-                        ))
-                    end
-
-                end
-
-                ImGui.EndChild()
-
-                ImGui.Separator()
-                ImGui.Text("Heal Decision")
-
-                local targets = healService:collectTargets()
-                local best = healService:selectBestTarget(targets)
-
-                if best then
-
-                    local heal = healService:selectHealSpell(best)
-
-                    ImGui.Text(string.format(
-                            "Chosen Target: %s",
-                            best.name
-                    ))
-
-                    ImGui.Text(string.format(
-                            "HP: %d",
-                            best.hp
-                    ))
-
-                    if heal then
-                        ImGui.Text(string.format(
-                                "Spell: %s",
-                                heal.spell
-                        ))
-                    end
-
-                else
-                    ImGui.Text("No heal needed")
-                end
-
+            for _, t in ipairs(nukeDecision.joltList) do
+                ImGui.Text(string.format("Jolt: %s | gem %s | aggro >%s%%",
+                    t.name, tostring(t.gem), tostring(t.aggroThreshold or nukeDecision.joltThreshold)
+                ))
             end
+            ImGui.EndChild()
+        end
+
+        ImGui.Separator()
+
+        -- Ability Decision
+        ImGui.Text("Ability Decision")
+        local abilityDecision = RunTime.abilityDecision
+        if abilityDecision then
+            ImGui.BeginChild("AbilityList", 0, 80, true)
+            for _, t in ipairs(abilityDecision.abilityList) do
+                ImGui.Text(string.format("%s | %s", t.name, t.type))
+            end
+            ImGui.EndChild()
+        end
+
+        ImGui.Separator()
+
+        -- Heal Decision
+        ImGui.Text("Heal Decision")
+        local healDecision = RunTime.healDecision
+        if healDecision and healDecision.job then
+            ImGui.Text(string.format("Pending: %s → %s", tostring(healDecision.job.targetId), healDecision.job.name))
         else
-            ImGui.Text("Debug Disabled")
+            ImGui.Text("No heal pending")
+        end
+        if ctx and ctx.self and ctx.self.heal and ctx.self.heal.group then
+            ImGui.BeginChild("HealTargets", 0, 100, true)
+            for _, t in ipairs(ctx.self.heal.group.memberStatus or {}) do
+                ImGui.Text(string.format("%s | HP:%d | Role:%s", t.name, t.hp, t.role))
+            end
+            ImGui.EndChild()
+        end
+
+        ImGui.Separator()
+
+        -- Debuff Decision
+        ImGui.Text("Debuff Decision")
+        local debuffDecision = RunTime.debuffDecision
+        if debuffDecision then
+            local now = mq.gettime()
+            ImGui.BeginChild("DebuffTimers", 0, 80, true)
+            local any = false
+            for k, v in pairs(debuffDecision.retryTimer) do
+                any = true
+                ImGui.Text(string.format("%s | %.1fs", k, math.max(0, v - now) / 1000))
+            end
+            if not any then ImGui.Text("No active timers") end
+            ImGui.EndChild()
         end
 
     end
@@ -384,7 +252,7 @@ local function mainLoop()
     local nukeDecision = NukeDecision:new(config)
     local assistDecision = AssistDecision:new()
     local healDecision = HealDecision:new(config)
-    local debuffDecision = DebuffDecision:new()
+    local debuffDecision = DebuffDecision:new(config)
     local abilityDecision = AbilityDecision:new(config)
     local context = Context:new(config)
 
@@ -398,12 +266,15 @@ local function mainLoop()
     })
 
     RunTime.engine = engine
+    RunTime.castService = castService
+    RunTime.buffService = buffService
+    RunTime.nukeDecision = nukeDecision
+    RunTime.abilityDecision = abilityDecision
+    RunTime.healDecision = healDecision
+    RunTime.debuffDecision = debuffDecision
 
     mq.imgui.init("CombatDebugUI", function()
-        local ok, err = pcall(function()
-            DrawDebugWindow(castService, buffService, healService, combatService, nukeDecision)
-        end)
-
+        local ok, err = pcall(DrawDebugWindow)
         if not ok then
             print("UI Error:", err)
         end
@@ -417,6 +288,7 @@ local function mainLoop()
         --order matters
         --Process network replies and resolve promises
         local ctx = context:build(State)
+        RunTime.ctx = ctx
         local action = engine:evaluate(ctx)
         if action then
             action:execute(ctx)
