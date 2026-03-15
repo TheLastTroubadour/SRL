@@ -36,7 +36,6 @@ PackageMan.Require('lyaml')
 PackageMan.Require('luafilesystem', 'lfs')
 --needs to be after lyaml by packageman
 local Config = require 'srl.config.Config'
-local StateService = require 'srl.service.StateService'
 local EventRegistry = require 'srl.core.EventRegistry'
 local InviteService = require 'srl.service.InviteService'
 local BurnService = require 'srl.service.BurnService'
@@ -432,7 +431,6 @@ local function mainLoop()
         Logging.Debug("Main While loop Start")
         mq.doevents()
 
-        --StateService:update(State)
         --order matters
         --Process network replies and resolve promises
         local ctx = context:build(State)

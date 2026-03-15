@@ -238,34 +238,6 @@ function ConfigService:generateCharacterYaml()
     end
 
 -------------------------------------------------
--- Runtime Override
--------------------------------------------------
-
-function ConfigService:setRuntime(path,value)
-
-    local node = self.layers.runtime
-
-    local parts = {}
-
-    for p in self.path:gmatch("[^%.]+") do
-        table.insert(parts,p)
-    end
-
-    for i=1,#parts-1 do
-
-        local part = parts[i]
-
-        node[part] = node[part] or {}
-
-        node = node[part]
-
-    end
-
-    node[parts[#parts]] = value
-
-end
-
--------------------------------------------------
 -- Build Final Config
 -------------------------------------------------
 
@@ -341,48 +313,6 @@ function ConfigService:validate()
         error("Invalid Config")
 
     end
-
-end
-
--------------------------------------------------
--- YAML Patch
--------------------------------------------------
-
-function ConfigService:patchYamlValue(key,value)
-
-    local path = self.path .. self.characterName..".yaml"
-
-    local lines = {}
-
-    for line in io.lines(path) do
-        table.insert(lines,line)
-    end
-
-    local replaced = false
-
-    for i,line in ipairs(lines) do
-
-        if line:match("^"..key..":") then
-
-            lines[i] = key..": "..tostring(value)
-
-            replaced = true
-
-        end
-
-    end
-
-    if not replaced then
-        table.insert(lines,key..": "..tostring(value))
-    end
-
-    local file = io.open(path,"w")
-
-    for _,l in ipairs(lines) do
-        file:write(l.."\n")
-    end
-
-    file:close()
 
 end
 

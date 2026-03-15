@@ -3,4 +3,5 @@ macro/*
 examples/*
 IntegrationTests/*
 srl/config/bot_ini/*
+srl/config/bot_yaml/*
 /rgmercs/*
