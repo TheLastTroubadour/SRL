@@ -31,6 +31,7 @@ local HealDecision = require 'srl.decision.actions.Heal'
 local DebuffDecision = require 'srl.decision.actions.Debuff'
 local AbilityDecision = require 'srl.decision.actions.Abilities'
 local CCDecision = require 'srl.decision.actions.CrowdControl'
+local ClericDecision = require 'srl.decision.actions.Cleric'
 local MovementDecision = require 'srl.decision.actions.Movement'
 PackageMan.Require('lyaml')
 PackageMan.Require('luafilesystem', 'lfs')
@@ -392,6 +393,7 @@ local function mainLoop()
     local debuffDecision = DebuffDecision:new(config)
     local abilityDecision = AbilityDecision:new(config)
     local ccDecision = CCDecision:new(config)
+    local clericDecision  = ClericDecision:new(config)
     local movementDecision = MovementDecision:new()
     local context = Context:new(config)
 
@@ -406,6 +408,7 @@ local function mainLoop()
         nukeDecision,
         assistDecision,
         healDecision,
+        clericDecision,
         cureDecision,
         debuffDecision,
         abilityDecision

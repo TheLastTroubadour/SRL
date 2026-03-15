@@ -19,6 +19,8 @@ return {
         Cleric = {
             DivineArbitrationPct      = 35,
             EpicPct                   = 35,
+            EpicName                  = '',   -- item name for CLR 2.0 epic click
+            DonorMinPct               = 60,   -- avg HP% non-tank members must be above for DA/epic to be useful
             CelestialRegenarationPct  = 0,
             AutoYaulp                 = false,
             YaulpSpell                = '',
