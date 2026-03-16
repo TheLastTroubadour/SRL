@@ -199,6 +199,34 @@ function CommandBus:init()
         local extra = buildExtra({...}, { sender=true })
         mq.cmdf('/dgae /srlevent ReloadConfig sender=%s%s', mq.TLO.Me.Name(), extra)
     end)
+
+    local function splitItemArgs(args)
+        local nameParts, kvArgs = {}, {}
+        for _, a in ipairs(args) do
+            if a:match('^[^=]+=') then
+                table.insert(kvArgs, a)
+            else
+                table.insert(nameParts, a)
+            end
+        end
+        return table.concat(nameParts, ' '), kvArgs
+    end
+
+    mq.unbind('/fi')
+    mq.bind('/fi', function(...)
+        local itemName, kvArgs = splitItemArgs({...})
+        if itemName == '' then return end
+        local extra = buildExtra(kvArgs, { sender=true })
+        mq.cmdf('/dgae /srlevent FindItem item=%s sender=%s%s', itemName:gsub(' ', '_'), mq.TLO.Me.Name(), extra)
+    end)
+
+    mq.unbind('/fmi')
+    mq.bind('/fmi', function(...)
+        local itemName, kvArgs = splitItemArgs({...})
+        if itemName == '' then return end
+        local extra = buildExtra(kvArgs, { sender=true })
+        mq.cmdf('/dgae /srlevent FindMissingItem item=%s sender=%s%s', itemName:gsub(' ', '_'), mq.TLO.Me.Name(), extra)
+    end)
 end
 
 function CommandBus:register(command, handler)

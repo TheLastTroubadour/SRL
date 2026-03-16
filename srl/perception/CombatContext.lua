@@ -97,17 +97,64 @@ function Context:build(state)
             ctx.self.heal.spells = self.heal.spells
             ctx.self.heal.group.members = mq.TLO.Group.Members()
 
+            local seen = {}
+
             for i = 1, ctx.self.heal.group.members do
                 local m = mq.TLO.Group.Member(i)
 
                 if m() and m.Spawn() and not m.Dead() then
-                    local role = self:getHealerRole(m.CleanName())
-                    table.insert(ctx.self.heal.group.memberStatus, {
-                        id = m.ID(),
-                        name = m.CleanName(),
-                        hp = m.PctHPs(),
-                        role = role
-                    })
+                    local name = m.CleanName()
+                    if not seen[name] then
+                        seen[name] = true
+                        local role = self:getHealerRole(name)
+                        table.insert(ctx.self.heal.group.memberStatus, {
+                            id = m.ID(),
+                            name = name,
+                            hp = m.PctHPs(),
+                            role = role
+                        })
+                    end
+                end
+            end
+
+            -- Raid members
+            local raidMembers = mq.TLO.Raid.Members() or 0
+            for i = 1, raidMembers do
+                local r = mq.TLO.Raid.Member(i)
+                if r() and not r.Dead() then
+                    local name = r.CleanName()
+                    if not seen[name] then
+                        local spawn = mq.TLO.Spawn('pc =' .. name)
+                        if spawn() then
+                            seen[name] = true
+                            local role = self:getHealerRole(name)
+                            table.insert(ctx.self.heal.group.memberStatus, {
+                                id = spawn.ID(),
+                                name = name,
+                                hp = r.PctHPs(),
+                                role = role
+                            })
+                        end
+                    end
+                end
+            end
+
+            -- XTarget friendly slots
+            local xtSlots = mq.TLO.Me.XTargetSlots() or 0
+            for i = 1, xtSlots do
+                local xt = mq.TLO.Me.XTarget(i)
+                if xt() and not xt.Dead() and xt.Type() ~= 'NPC' and not xt.Aggressive() then
+                    local name = xt.CleanName()
+                    if name and not seen[name] then
+                        seen[name] = true
+                        local role = self:getHealerRole(name)
+                        table.insert(ctx.self.heal.group.memberStatus, {
+                            id = xt.ID(),
+                            name = name,
+                            hp = xt.PctHPs(),
+                            role = role
+                        })
+                    end
                 end
             end
         end

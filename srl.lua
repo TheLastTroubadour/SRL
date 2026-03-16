@@ -34,6 +34,8 @@ local CCDecision = require 'srl.decision.actions.CrowdControl'
 local ClericDecision = require 'srl.decision.actions.Cleric'
 local RezDecision = require 'srl.decision.actions.Rez'
 local GiftOfMana = require 'srl.decision.actions.GiftOfMana'
+local WizardDecision = require 'srl.decision.actions.Wizard'
+local ShrinkDecision = require 'srl.decision.actions.Shrink'
 local MovementDecision = require 'srl.decision.actions.Movement'
 PackageMan.Require('lyaml')
 PackageMan.Require('luafilesystem', 'lfs')
@@ -386,6 +388,75 @@ local function mainLoop()
         melodyService:stop()
     end)
 
+    local function searchInventory(searchTerm)
+        local lower   = searchTerm:lower()
+        local results = {}
+
+        for slot = 0, 31 do
+            local inv = mq.TLO.Me.Inventory(slot)
+            if inv() then
+                local name = inv.Name() or ''
+                if name:lower():find(lower, 1, true) then
+                    table.insert(results, { name = name, slot = slot, slot2 = -1 })
+                end
+                local containerSize = inv.Container() or 0
+                if containerSize > 0 then
+                    for s = 1, containerSize do
+                        local sub = inv.Item(s)
+                        if sub() then
+                            local subName = sub.Name() or ''
+                            if subName:lower():find(lower, 1, true) then
+                                table.insert(results, { name = subName, slot = slot, slot2 = s })
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        return results
+    end
+
+    local function itemLocation(result)
+        if result.slot >= 22 and result.slot <= 31 then
+            return string.format('Bag %d, Slot %d', result.slot - 21, result.slot2)
+        end
+        return string.format('Slot %d', result.slot)
+    end
+
+    CommandBus:register('FindItem', function(payload)
+        local itemName = (payload.item or ''):gsub('_', ' ')
+        if itemName == '' then return end
+
+        local results = searchInventory(itemName)
+        if #results == 0 then return end
+
+        local me = mq.TLO.Me.Name()
+        if #results == 1 then
+            mq.cmdf('/dgt all [%s] %s -> %s', me, results[1].name, itemLocation(results[1]))
+        else
+            local names = {}
+            for _, r in ipairs(results) do
+                table.insert(names, string.format('%s (%s)', r.name, itemLocation(r)))
+            end
+            mq.cmdf('/dgt all [%s] multiple matches: %s', me, table.concat(names, ', '))
+        end
+    end)
+
+    CommandBus:register('FindMissingItem', function(payload)
+        local itemName = (payload.item or ''):gsub('_', ' ')
+        if itemName == '' then return end
+
+        local results = searchInventory(itemName)
+        local me = mq.TLO.Me.Name()
+        if #results == 0 then
+            mq.cmdf('/dgt all [%s] missing %s', me, itemName)
+        elseif #results > 1 then
+            local names = {}
+            for _, r in ipairs(results) do table.insert(names, r.name) end
+            mq.cmdf('/dgt all [%s] multiple matches: %s', me, table.concat(names, ', '))
+        end
+    end)
+
     CommandBus:register("COMBAT_ENDED", function()
             State:clearCombatState()
             castService:interruptCasting()
@@ -403,6 +474,8 @@ local function mainLoop()
     local clericDecision  = ClericDecision:new(config)
     local rezDecision     = RezDecision:new(config)
     local giftOfMana      = GiftOfMana:new(config)
+    local wizardDecision  = WizardDecision:new(config)
+    local shrinkDecision  = ShrinkDecision:new(config)
     local movementDecision = MovementDecision:new()
     local context = Context:new(config)
 
@@ -420,9 +493,11 @@ local function mainLoop()
         clericDecision,
         rezDecision,
         giftOfMana,
+        wizardDecision,
         cureDecision,
         debuffDecision,
-        abilityDecision
+        abilityDecision,
+        shrinkDecision
     })
 
     RunTime.engine = engine

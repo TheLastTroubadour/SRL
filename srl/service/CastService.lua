@@ -173,6 +173,12 @@ function CastService:castAbility(job)
     mq.cmdf('/doability %s', job.name)
 end
 
+function CastService:castItem(job)
+    if mq.TLO.FindItem('=' .. job.name)() then
+        mq.cmdf('/useitem "%s"', job.name)
+    end
+end
+
 function CastService:castDisc(job)
     if mq.TLO.Me.CombatAbilityReady(job.name)() then
         mq.cmdf('/disc %s', job.name)
@@ -203,13 +209,14 @@ function CastService:checkIfHasBuff(job)
         Target:getTargetById(job.targetId)
     end
 
-    if mq.TLO.Target.Buff(job.name)() then
+    local checkName = job.buffName or job.name
+    if mq.TLO.Target.Buff(checkName)() then
         return true
     end
 
     -- Also check base name without rank suffix (e.g. "Hand of Tenacity Rk. III" -> "Hand of Tenacity")
-    local baseName = job.name:gsub('%s+Rk%.%s*%a+$', '')
-    if baseName ~= job.name and mq.TLO.Target.Buff(baseName)() then
+    local baseName = checkName:gsub('%s+Rk%.%s*%a+$', '')
+    if baseName ~= checkName and mq.TLO.Target.Buff(baseName)() then
         return true
     end
 

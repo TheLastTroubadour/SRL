@@ -106,7 +106,7 @@ function BuffService:processCategory(category, inCombat)
 
         buff.category = category
 
-        local p = self:pollIfDue(buff.targetName, buff.name)
+        local p = self:pollIfDue(buff.targetName, buff.buffName or buff.name)
         if p then
             self:handlePollPromise(buff.targetName, buff, p)
         end
@@ -122,18 +122,26 @@ function BuffService:getBuffInformationForKey(key)
         for _, v in ipairs(values) do
             local spellName = v.spell
             local gem = v.gem or 8
+            local jobType = v.type or 'buff'
+            local buffName = spellName
+            if jobType == 'item' then
+                local clickySpell = mq.TLO.FindItem('=' .. spellName).Clicky.Spell.Name()
+                if clickySpell then buffName = clickySpell end
+            end
             if (v.charactersToBuff) then
                 for _, character in ipairs(v.charactersToBuff) do
                     --TODO need to fix IniLine and don't need generation for buffs and add conditions instead of iniLine
                     local targetId = mq.TLO.Spawn('pc = ' .. character).ID()
-                    local job = Job:new(targetId, character, spellName, 'buff', 0, gem)
+                    local job = Job:new(targetId, character, spellName, jobType, 0, gem)
                     job.alwaysCheck = v.alwaysCheck or false
+                    job.buffName = buffName
                     table.insert(jobList, job)
                 end
             else
                 local characterId = mq.TLO.Me.ID()
-                local job = Job:new(characterId, mq.TLO.Me.Name(), spellName, 'buff', 0, gem)
+                local job = Job:new(characterId, mq.TLO.Me.Name(), spellName, jobType, 0, gem)
                 job.alwaysCheck = v.alwaysCheck or false
+                job.buffName = buffName
                 table.insert(jobList, job)
             end
         end
