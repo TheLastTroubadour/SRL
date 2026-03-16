@@ -69,17 +69,16 @@ function BuffService:pollIfDue(target, spell)
     )
 end
 
-function BuffService:update()
-    local inCombat = self.combatService:isInCombat()
-
-    -- Always check self buffs (but gated)
+function BuffService:update(ctx)
+    local inCombat = (ctx and ctx.numberOfAggresiveInXTar and ctx.numberOfAggresiveInXTar > 0)
+                  or self.combatService:isInCombat()
 
     -- Combat buffs only in combat
     if inCombat then
         self:processCategory("combatBuffs", true)
     end
 
-    -- Group buffs only out of combat unless explicit
+    -- Self/bot buffs only out of combat
     if not inCombat then
         self:processCategory("selfBuffs", inCombat)
         self:processCategory("botBuffs", inCombat)
@@ -98,8 +97,8 @@ function BuffService:processCategory(category, inCombat)
     end
 
     for _, buff in ipairs(spells) do
-        -- Gate long buffs during combat
-        if category == "botBuffs" and inCombat then
+        -- Gate long buffs during combat unless alwaysCheck is set
+        if category == "botBuffs" and inCombat and not buff.alwaysCheck then
             if not self.explicitRequests[buff.target .. ":" .. buff.spell] then
                 goto continue
             end
@@ -128,11 +127,13 @@ function BuffService:getBuffInformationForKey(key)
                     --TODO need to fix IniLine and don't need generation for buffs and add conditions instead of iniLine
                     local targetId = mq.TLO.Spawn('pc = ' .. character).ID()
                     local job = Job:new(targetId, character, spellName, 'buff', 0, gem)
+                    job.alwaysCheck = v.alwaysCheck or false
                     table.insert(jobList, job)
                 end
             else
                 local characterId = mq.TLO.Me.ID()
                 local job = Job:new(characterId, mq.TLO.Me.Name(), spellName, 'buff', 0, gem)
+                job.alwaysCheck = v.alwaysCheck or false
                 table.insert(jobList, job)
             end
         end
@@ -169,6 +170,7 @@ function BuffService:handlePollPromise(target, buffEntry, promise)
             -- If long group buff and in combat and not explicit → skip
             if buffEntry.category == 'botBuffs'
                     and inCombat
+                    and not buffEntry.alwaysCheck
                     and not self.explicitRequests[k]
             then
                 self.nextCheck[k] = now + 5000

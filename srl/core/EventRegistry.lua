@@ -17,6 +17,11 @@ function EventRegistry:init(services)
         if buffService then buffService:reset() end
     end)
 
+    -- Resurrection offer
+    mq.event('RezOffer', '#1# has offered you a resurrection.', function(resurrector)
+        if inviteService then inviteService:handleRezOffer(resurrector) end
+    end)
+
     -- Group / raid invites
     mq.event('GroupInvite', '#1# invites you to join a group.', function(inviter)
         if inviteService then inviteService:handleGroupInvite(inviter) end

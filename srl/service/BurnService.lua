@@ -45,7 +45,10 @@ function BurnService:activate(sectionKey)
         if v.type == 'aa' then
             mq.cmdf('/alt activate "%s"', v.name)
         elseif v.type == 'disc' then
-            mq.cmdf('/disc "%s"', v.name)
+            local activeDisc = mq.TLO.Me.ActiveDisc()
+            if not activeDisc or activeDisc == '' then
+                mq.cmdf('/disc "%s"', v.name)
+            end
         elseif v.type == 'ability' then
             mq.cmdf('/doability "%s"', v.name)
         elseif v.type == 'item' then

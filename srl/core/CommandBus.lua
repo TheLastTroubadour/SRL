@@ -193,6 +193,12 @@ function CommandBus:init()
         local extra = buildExtra({...}, { sender=true })
         mq.cmdf('/dgae /srlevent StopMelody sender=%s%s', mq.TLO.Me.Name(), extra)
     end)
+
+    mq.unbind('/srlreload')
+    mq.bind('/srlreload', function(...)
+        local extra = buildExtra({...}, { sender=true })
+        mq.cmdf('/dgae /srlevent ReloadConfig sender=%s%s', mq.TLO.Me.Name(), extra)
+    end)
 end
 
 function CommandBus:register(command, handler)

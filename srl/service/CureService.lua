@@ -23,7 +23,7 @@ function CureService:update()
 
     local needed = {}
     for _, t in ipairs(COUNTER_TYPES) do
-        if mq.TLO.Me.Counters[t]() > 0 then
+        if mq.TLO.Me['Counters' .. t]() > 0 then
             table.insert(needed, t)
         end
     end

@@ -221,6 +221,7 @@ function CombatService:shouldEngage()
     if target.Dead() then
         if target.ID() == State.assist.targetId then
             State.assist.targetId = nil
+            mq.cmd('/attack off')
         end
     return false end
 

@@ -23,6 +23,8 @@ end
 --         - 5
 --         - 6
 function MelodyService:play(name)
+    if mq.TLO.Me.Class.ShortName() ~= 'BRD' then return end
+
     local melodies = self.config:get('Bard.Melodies') or {}
     local gems = melodies[name]
     if not gems or #gems == 0 then

@@ -41,7 +41,7 @@ function BufferController:handleRequest(sender, data)
     payload.spellName = spell
     payload.generation = data.data.generation
 
-    self.bus:reply(sender, payload)
+    self.bus:reply(data.sender, payload)
 end
 
 

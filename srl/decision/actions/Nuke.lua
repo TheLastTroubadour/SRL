@@ -12,9 +12,10 @@ function NukeDecision:new(config)
     self.name = "NukeDecision"
     self.nukeList = self:getJobsFromKey(NUKE_KEY, 'nuke')
     self.joltList = self:getJobsFromKey(JOLT_KEY, 'nuke')
-    self.joltThreshold  = config:get('Jolts.JoltThreshold')  or 80
+    self.joltThreshold    = config:get('Jolts.JoltThreshold')  or 80
     self.lockoutThreshold = config:get('Jolts.LockoutThreshold') or 100
-    self.nuke = nil
+    self.nuke             = nil
+    self.nukeIndex        = 1
     return self
 end
 
@@ -82,6 +83,7 @@ function NukeDecision:execute(ctx)
     mq.cmd("/stick off")
     mq.cmd("/afollow off")
     mq.cmdf("/casting \"%s\"|%s", self.nuke.name, self.nuke.gem)
+    self.nukeIndex = self.nukeIndex % #self.nukeList + 1
 end
 
 -- Find the highest-threshold jolt that applies to current aggro and is ready.
@@ -107,7 +109,12 @@ function NukeDecision:findReadyJolt(aggro, targetId)
 end
 
 function NukeDecision:findReady(list, targetId)
-    for _, entry in ipairs(list) do
+    if #list == 0 then return nil end
+
+    -- Try each entry starting from nukeIndex, wrapping around
+    for i = 0, #list - 1 do
+        local idx = (self.nukeIndex - 1 + i) % #list + 1
+        local entry = list[idx]
         entry:setTargetId(targetId)
         if self:canUse(entry) then
             return entry

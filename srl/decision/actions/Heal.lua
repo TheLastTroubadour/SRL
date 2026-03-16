@@ -38,7 +38,7 @@ function HealDecision:score(ctx)
         local heal = self:selectHealSpell(bestTarget, ctx.self.heal.spells)
         if heal then
             local spell = mq.TLO.Spell(heal.spell)
-            local spellManaCost = spell.Mana()
+            local spellManaCost = spell.Mana() or 0
             if ctx.currentMana > spellManaCost and mq.TLO.Cast.Ready(heal.spell) then
                 self.job = Job:new(
                         bestTarget.id,
@@ -73,6 +73,8 @@ function HealDecision:checkGroupHeal(targets)
         return false
     end
 
+    if #targets == 0 then return false end
+
     local total = 0
 
     for _,t in ipairs(targets) do
@@ -82,16 +84,17 @@ function HealDecision:checkGroupHeal(targets)
     local avg = total / #targets
 
     local threshold = self.config:get("Heals.GroupThreshold") or 65
-    local spell = self.config:get("Heals.GroupSpell")
+    local groupSpell = self.config:get("Heals.GroupSpell")
 
-    if avg <= threshold and spell then
+    if avg <= threshold and groupSpell and groupSpell.spell then
 
         self.job = Job:new(
                 mq.TLO.Me.ID(),
                 mq.TLO.Me.Name(),
-                spell,
+                groupSpell.spell,
                 "heal",
-                480
+                480,
+                groupSpell.gem
         )
 
         self.groupHealLock = mq.gettime() + 5000

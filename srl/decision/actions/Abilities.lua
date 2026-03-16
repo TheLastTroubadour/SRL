@@ -44,6 +44,8 @@ function AbilityDecision:execute(ctx)
             mq.cmdf('/disc %s', job.name)
         elseif job.type == 'aa' then
             mq.cmdf('/alt activate %s', job.name)
+        elseif job.type == 'item' then
+            mq.cmdf('/useitem "%s"', job.name)
         end
     end
 end
@@ -60,8 +62,21 @@ function AbilityDecision:canUse(entry, ctx)
 
     -- debuff-type abilities: skip if target already has the effect
     if entry.abilityHasDebuff then
-        if ctx.myCurrentTargetId == entry.targetId and mq.TLO.Target.Buff(entry.name)() then
-            return false
+        if ctx.myCurrentTargetId == entry.targetId then
+            if entry.stacks then
+                -- stacking: loop all buff slots to find if MY version is present
+                local myName = mq.TLO.Me.Name()
+                for i = 1, mq.TLO.Target.BuffCount() do
+                    local buff = mq.TLO.Target.Buff(i)
+                    if buff() and buff.Name() == entry.name and buff.Caster() == myName then
+                        return false
+                    end
+                end
+            else
+                if mq.TLO.Target.Buff(entry.name)() then
+                    return false
+                end
+            end
         end
     end
 
@@ -75,6 +90,10 @@ function AbilityDecision:canUse(entry, ctx)
 
     if entry.type == 'aa' then
         return mq.TLO.Me.AltAbilityReady(entry.name)() == true
+    end
+
+    if entry.type == 'item' then
+        return mq.TLO.FindItem('=' .. entry.name)() ~= nil
     end
 
     return false
@@ -91,6 +110,9 @@ function AbilityDecision:loadAbilities()
             local job = Job:new(nil, nil, tostring(name), jobType, priority, nil)
             if v.debuff then
                 job.abilityHasDebuff = true
+            end
+            if v.stacks then
+                job.stacks = true
             end
             if v.reagent then
                 job.reagent = v.reagent

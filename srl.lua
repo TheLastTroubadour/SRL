@@ -32,6 +32,8 @@ local DebuffDecision = require 'srl.decision.actions.Debuff'
 local AbilityDecision = require 'srl.decision.actions.Abilities'
 local CCDecision = require 'srl.decision.actions.CrowdControl'
 local ClericDecision = require 'srl.decision.actions.Cleric'
+local RezDecision = require 'srl.decision.actions.Rez'
+local GiftOfMana = require 'srl.decision.actions.GiftOfMana'
 local MovementDecision = require 'srl.decision.actions.Movement'
 PackageMan.Require('lyaml')
 PackageMan.Require('luafilesystem', 'lfs')
@@ -318,6 +320,10 @@ local function mainLoop()
         ccDecision:setMaxTankedMobs(payload.n)
     end)
 
+    CommandBus:register('ReloadConfig', function()
+        config:reload()
+    end)
+
     CommandBus:register('BackOff', function()
         State:clearCombatState()
         mq.cmd('/attack off')
@@ -384,6 +390,7 @@ local function mainLoop()
             State:clearCombatState()
             castService:interruptCasting()
             followService:resumeFollow()
+            mq.cmd('/attack off')
     end)
 
     local resourceDecision = ResourceDecision:new()
@@ -394,6 +401,8 @@ local function mainLoop()
     local abilityDecision = AbilityDecision:new(config)
     local ccDecision = CCDecision:new(config)
     local clericDecision  = ClericDecision:new(config)
+    local rezDecision     = RezDecision:new(config)
+    local giftOfMana      = GiftOfMana:new(config)
     local movementDecision = MovementDecision:new()
     local context = Context:new(config)
 
@@ -409,6 +418,8 @@ local function mainLoop()
         assistDecision,
         healDecision,
         clericDecision,
+        rezDecision,
+        giftOfMana,
         cureDecision,
         debuffDecision,
         abilityDecision

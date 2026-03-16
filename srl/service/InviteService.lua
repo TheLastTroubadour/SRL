@@ -11,7 +11,18 @@ function InviteService:handleRaidInvite(inviter)
         return
     end
 
-    mq.cmd('/raidinvite accept')
+    --mq.cmd('/raidinvite accept')
+
+end
+
+function InviteService:handleRezOffer(resurrector)
+
+    if not self:isDanNetPeer(resurrector) then
+        print("Rez offer ignored (not a DanNet peer): " .. tostring(resurrector))
+        return
+    end
+
+    mq.cmd('/accept')
 
 end
 

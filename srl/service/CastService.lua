@@ -37,6 +37,7 @@ function CastService:startWorker()
     self.scheduler:spawn(function()
 
         while true do
+            local ok, err = pcall(function()
             for i = #self.queue, 1, -1 do
                 local job = self.queue[i]
                 if job.generation then
@@ -55,9 +56,11 @@ function CastService:startWorker()
 
                 --Don't queue anything not in range need to do something for AE spells
                 if(job.type ~= 'ability') then
-                    local spellDistance = mq.TLO.Spell(job.name).Range()
+                    local range = mq.TLO.Spell(job.name).Range() or 0
+                    local spellDistance = tonumber(range) == 0 and mq.TLO.Spell(job.name).AERange() or range
                     if spellDistance and spawn() and tonumber(spellDistance) < tonumber(spawn.Distance()) then
-                        print("Removing due to spell distance " .. job.name .. job.targetId)
+                        print(string.format("Removing due to spell distance: %s | target: %s (id: %s) | dist: %.1f | range: %.1f",
+                            job.name, job.targetName, job.targetId, tonumber(spawn.Distance()), tonumber(spellDistance)))
                         table.remove(self.queue, i)
                     end
                 end
@@ -101,6 +104,11 @@ function CastService:startWorker()
                 self.currentlyInFlight = nil
                 self.queuedKeys[job.key] = nil
                 self.queuedKeys[job.name] = nil
+            end
+            end) -- end pcall
+            if not ok then
+                print("CastService worker error:", err)
+                self.currentlyInFlight = nil
             end
         end
     end)
@@ -150,10 +158,12 @@ end
 local function hasEnoughMana(spellName)
     local spell = mq.TLO.Spell(spellName)
     if not spell() then
-        return false
+        return true -- spell not in DB, let the cast attempt handle it
     end
 
     local manaCost = spell.Mana() or 0
+    if manaCost == 0 then return true end
+
     local currentMana = mq.TLO.Me.CurrentMana() or 0
 
     return currentMana >= manaCost
@@ -172,7 +182,11 @@ end
 
 function CastService:castSpell(job)
     if not hasEnoughMana(job.name) then
-        print("Not enough mana for: " .. job.name)
+        print(string.format("Not enough mana for: %s (have %d, need %d)",
+            job.name,
+            mq.TLO.Me.CurrentMana() or 0,
+            mq.TLO.Spell(job.name).Mana() or 0
+        ))
         return
     end
     if job.type == 'buff' then
@@ -192,6 +206,13 @@ function CastService:checkIfHasBuff(job)
     if mq.TLO.Target.Buff(job.name)() then
         return true
     end
+
+    -- Also check base name without rank suffix (e.g. "Hand of Tenacity Rk. III" -> "Hand of Tenacity")
+    local baseName = job.name:gsub('%s+Rk%.%s*%a+$', '')
+    if baseName ~= job.name and mq.TLO.Target.Buff(baseName)() then
+        return true
+    end
+
     return false
 end
 
