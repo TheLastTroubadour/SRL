@@ -1,0 +1,51 @@
+name: Publish to RedGuides
+
+on:
+  push:
+    tags:
+      - 'v*'
+      - '[0-9]*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to publish (e.g., v1.2.3). This should be a valid git ref (tag, branch, or SHA) that will be checked out."
+        required: true
+        type: string
+      message:
+        description: "Optional update message (plain text). If omitted, we use the annotated tag message."
+        required: false
+        type: string
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: "${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version || github.ref }}"
+          fetch-depth: 0
+
+      - name: Build zip file
+        run: git archive --format=zip --prefix="srl/" -o "${{ github.event.repository.name }}_${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version || github.ref_name }}.zip" HEAD
+
+      - name: Write message from workflow input (manual run)
+        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.message != '' }}
+        env:
+          MESSAGE: ${{ github.event.inputs.message }}
+        run: printf "%s\n" "$MESSAGE" > rg_release_notes.md
+
+      - name: Create message from tag annotation
+        if: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.message == '' }}
+        run: git tag -l --format='%(contents)' "${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version || github.ref_name }}" > rg_release_notes.md
+
+      - name: Publish to RedGuides
+        uses: RedGuides/redguides-publish@v1
+        env:
+          REDGUIDES_API_KEY: ${{ secrets.REDGUIDES_API_KEY }}
+        with:
+          resource_id: "3299"
+          version: "${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version || github.ref_name }}"
+          file: "${{ github.event.repository.name }}_${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version || github.ref_name }}.zip"
+          message: "rg_release_notes.md"
+          domain: "https://raw.githubusercontent.com/${{ github.repository }}/${{ github.event.repository.default_branch }}/"
