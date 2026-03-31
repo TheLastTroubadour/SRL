@@ -124,16 +124,8 @@ end
 -------------------------------------------------
 
 local function fileModified(path)
-
-    local p = io.open('stat -c %Y "'..path..'"')
-
-    if not p then return 0 end
-
-    local t = tonumber(p:read("*a")) or 0
-
-    p:close()
-
-    return t
+    local attr = LFS.attributes(path)
+    return attr and attr.modification or 0
 end
 
 -------------------------------------------------
@@ -152,7 +144,7 @@ end
 
 function ConfigService:loadGlobalSettings()
 
-    local path = mq.luaDir .. "\\srl\\config\\settings.yaml"
+    local path = mq.configDir .. "\\srl\\config\\settings.yaml"
 
     local file = io.open(path, "r")
 

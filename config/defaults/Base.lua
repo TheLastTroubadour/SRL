@@ -38,7 +38,8 @@ return {
         meleeStickDistance = 15,
         meleeStickPoint= 'Behind',
         rangedDistance = 100,
-        AutoAssistEngagePercent = 98
+        AutoAssistEngagePercent = 98,
+        requireAggressive = true
     },
     LifeSupport = {
 
