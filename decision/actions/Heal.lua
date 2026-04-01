@@ -114,7 +114,7 @@ function HealDecision:checkGroupHeal(targets)
         local gCount = mq.TLO.Group.Members() or 0
         for i = 1, gCount do
             local m = mq.TLO.Group.Member(i)
-            if m() then
+            if m() and not m.Dead() then
                 local hp  = m.PctHPs()
                 local dist = m.Distance() or 999
                 if hp and hp <= threshold and dist <= aeRange then

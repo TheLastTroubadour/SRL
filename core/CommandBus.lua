@@ -111,7 +111,7 @@ function CommandBus:init()
         -- Combat
         if subcmd == 'assiston' then
             local xtra = buildExtra(args, { sender=true, id=true, generation=true })
-            mq.cmdf('/dgae /srlevent Assist id=%s generation=%s sender=%s%s',
+            mq.cmdf('/dgze /srlevent Assist id=%s generation=%s sender=%s%s',
                 mq.TLO.Target.ID(), State.assist.generation + 1, me, xtra)
 
         elseif subcmd == 'backoff' then
@@ -125,14 +125,14 @@ function CommandBus:init()
                 if k == 'id' then followId = tonumber(v) or followId end
             end
             local xtra = buildExtra(args, { sender=true, id=true })
-            mq.cmdf('/dgae /srlevent Follow id=%s sender=%s%s', followId, me, xtra)
+            mq.cmdf('/dgze /srlevent Follow id=%s sender=%s%s', followId, me, xtra)
 
         elseif subcmd == 'stop' then
             broadcast('Stop', extra)
 
         elseif subcmd == 'move' then
             local xtra = buildExtra(args, { sender=true, id=true })
-            mq.cmdf('/dgae /srlevent Move id=%s sender=%s%s', mq.TLO.Me.ID(), me, xtra)
+            mq.cmdf('/dgze /srlevent Move id=%s sender=%s%s', mq.TLO.Me.ID(), me, xtra)
 
         elseif subcmd == 'navfollow' then
             broadcast('NavFollow', extra)
@@ -140,7 +140,7 @@ function CommandBus:init()
         elseif subcmd == 'mtt' then
             if not mq.TLO.Target() then return end
             local xtra = buildExtra(args, { sender=true, id=true })
-            mq.cmdf('/dgae /srlevent MoveToTarget id=%s sender=%s%s',
+            mq.cmdf('/dgze /srlevent MoveToTarget id=%s sender=%s%s',
                 mq.TLO.Target.ID(), me, xtra)
 
         -- Save currently equipped weapons to a named set in YAML
@@ -160,7 +160,7 @@ function CommandBus:init()
                 return
             end
             local xtra = buildExtra({ unpack(args, 2) }, { sender=true, set=true })
-            mq.cmdf('/dgae /srlevent SwapWeapons set=%s sender=%s%s', set, me, xtra)
+            mq.cmdf('/dgze /srlevent SwapWeapons set=%s sender=%s%s', set, me, xtra)
             mq.cmdf('/srlevent SwapWeapons set=%s sender=%s%s', set, me, xtra)
 
         -- Burns
@@ -190,43 +190,43 @@ function CommandBus:init()
         elseif subcmd == 'stopmelody' then broadcast('StopMelody', extra)
 
         elseif subcmd == 'medon' then
-            mq.cmdf('/dgae /srlevent MedOn sender=%s%s', me, extra)
+            mq.cmdf('/dgze /srlevent MedOn sender=%s%s', me, extra)
             mq.cmdf('/srlevent MedOn sender=%s%s', me, extra)
 
         elseif subcmd == 'medoff' then
-            mq.cmdf('/dgae /srlevent MedOff sender=%s%s', me, extra)
+            mq.cmdf('/dgze /srlevent MedOff sender=%s%s', me, extra)
             mq.cmdf('/srlevent MedOff sender=%s%s', me, extra)
 
         elseif subcmd == 'reson' then
-            mq.cmdf('/dgae /srlevent ResourceOn sender=%s%s', me, extra)
+            mq.cmdf('/dgze /srlevent ResourceOn sender=%s%s', me, extra)
             mq.cmdf('/srlevent ResourceOn sender=%s%s', me, extra)
 
         elseif subcmd == 'resoff' then
-            mq.cmdf('/dgae /srlevent ResourceOff sender=%s%s', me, extra)
+            mq.cmdf('/dgze /srlevent ResourceOff sender=%s%s', me, extra)
             mq.cmdf('/srlevent ResourceOff sender=%s%s', me, extra)
 
         elseif subcmd == 'moveon' then
             local seconds = args[1] or '60'
             local xtra = buildExtra({ unpack(args, 2) }, { sender=true, seconds=true })
-            mq.cmdf('/dgae /srlevent SuppressMed seconds=%s sender=%s%s', seconds, me, xtra)
+            mq.cmdf('/dgze /srlevent SuppressMed seconds=%s sender=%s%s', seconds, me, xtra)
             mq.cmdf('/srlevent SuppressMed seconds=%s sender=%s%s', seconds, me, xtra)
 
         elseif subcmd == 'stickpoint' then
             local point = args[1]
             if not point or point == '' then return end
             local xtra = buildExtra({ unpack(args, 2) }, { sender=true })
-            mq.cmdf('/dgae /srlevent StickPoint point=%s sender=%s%s', point, me, xtra)
+            mq.cmdf('/dgze /srlevent StickPoint point=%s sender=%s%s', point, me, xtra)
             mq.cmdf('/srlevent StickPoint point=%s sender=%s%s', point, me, xtra)
 
         elseif subcmd == 'stickdist' then
             local dist = args[1]
             if not dist or dist == '' then return end
             local xtra = buildExtra({ unpack(args, 2) }, { sender=true })
-            mq.cmdf('/dgae /srlevent StickDist dist=%s sender=%s%s', dist, me, xtra)
+            mq.cmdf('/dgze /srlevent StickDist dist=%s sender=%s%s', dist, me, xtra)
             mq.cmdf('/srlevent StickDist dist=%s sender=%s%s', dist, me, xtra)
 
         elseif subcmd == 'mount' then
-            mq.cmdf('/dgae /srlevent Mount sender=%s%s', me, extra)
+            mq.cmdf('/dgze /srlevent Mount sender=%s%s', me, extra)
             mq.cmdf('/srlevent Mount sender=%s%s', me, extra)
 
         elseif subcmd == 'buffme' then
@@ -347,11 +347,11 @@ function CommandBus:init()
                 return
             end
             local xtra = buildExtra(args, { sender=true, id=true })
-            mq.cmdf('/dgae /srlevent DebuffOn id=%s sender=%s%s', targetId, me, xtra)
+            mq.cmdf('/dgze /srlevent DebuffOn id=%s sender=%s%s', targetId, me, xtra)
             mq.cmdf('/srlevent DebuffOn id=%s sender=%s%s', targetId, me, xtra)
 
         elseif subcmd == 'debuffoff' then
-            mq.cmdf('/dgae /srlevent DebuffOff sender=%s%s', me, extra)
+            mq.cmdf('/dgze /srlevent DebuffOff sender=%s%s', me, extra)
             mq.cmdf('/srlevent DebuffOff sender=%s%s', me, extra)
 
         elseif subcmd == 'doton' then
@@ -361,19 +361,19 @@ function CommandBus:init()
                 return
             end
             local xtra = buildExtra(args, { sender=true, id=true })
-            mq.cmdf('/dgae /srlevent DotOn id=%s sender=%s%s', targetId, me, xtra)
+            mq.cmdf('/dgze /srlevent DotOn id=%s sender=%s%s', targetId, me, xtra)
             mq.cmdf('/srlevent DotOn id=%s sender=%s%s', targetId, me, xtra)
 
         elseif subcmd == 'dotoff' then
-            mq.cmdf('/dgae /srlevent DotOff sender=%s%s', me, extra)
+            mq.cmdf('/dgze /srlevent DotOff sender=%s%s', me, extra)
             mq.cmdf('/srlevent DotOff sender=%s%s', me, extra)
 
         elseif subcmd == 'aeon' then
-            mq.cmdf('/dgae /srlevent AEOn sender=%s%s', me, extra)
+            mq.cmdf('/dgze /srlevent AEOn sender=%s%s', me, extra)
             mq.cmdf('/srlevent AEOn sender=%s%s', me, extra)
 
         elseif subcmd == 'aeoff' then
-            mq.cmdf('/dgae /srlevent AEOff sender=%s%s', me, extra)
+            mq.cmdf('/dgze /srlevent AEOff sender=%s%s', me, extra)
             mq.cmdf('/srlevent AEOff sender=%s%s', me, extra)
 
         elseif subcmd == 'puller' then
