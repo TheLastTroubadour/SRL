@@ -18,59 +18,6 @@ local function senderInRange(payload, config)
 end
 
 -- ---------------------------------------------------------------------------
--- Inventory helpers
--- ---------------------------------------------------------------------------
-
-local function searchInventory(searchTerm)
-    local lower   = searchTerm:lower()
-    local results = {}
-
-    local function checkSlot(item, label)
-        if not item() then return end
-        local name = item.Name() or ''
-        if name:lower():find(lower, 1, true) then
-            table.insert(results, { name = name, count = item.Stack() or 1, location = label })
-        end
-        local containerSize = item.Container() or 0
-        for s = 1, containerSize do
-            local sub = item.Item(s)
-            if sub() then
-                local subName = sub.Name() or ''
-                if subName:lower():find(lower, 1, true) then
-                    table.insert(results, { name = subName, count = sub.Stack() or 1, location = label .. ' Slot ' .. s })
-                end
-            end
-        end
-    end
-
-    for slot = 0, 21 do
-        checkSlot(mq.TLO.Me.Inventory(slot), 'Slot ' .. slot)
-    end
-    for slot = 22, 31 do
-        checkSlot(mq.TLO.Me.Inventory(slot), 'Bag ' .. (slot - 21))
-    end
-    for slot = 1, 24 do
-        checkSlot(mq.TLO.Me.Bank(slot), 'Bank ' .. slot)
-    end
-
-    return results
-end
-
-local function aggregateResults(results)
-    local totals = {}
-    local order  = {}
-    for _, r in ipairs(results) do
-        if not totals[r.name] then
-            totals[r.name] = { count = 0, locations = {} }
-            table.insert(order, r.name)
-        end
-        totals[r.name].count = totals[r.name].count + r.count
-        table.insert(totals[r.name].locations, r.location)
-    end
-    return totals, order
-end
-
--- ---------------------------------------------------------------------------
 -- Setup
 -- rt fields used:
 --   combatController, followController, followService, castService,
@@ -338,13 +285,71 @@ function CommandRegistry:setup(commandBus, rt, config)
         end
     end)
 
+    local inventoryCooldown = {}
+    local function inventoryDedup(key)
+        local now = mq.gettime()
+        if inventoryCooldown[key] and now < inventoryCooldown[key] then return true end
+        inventoryCooldown[key] = now + 1000
+        return false
+    end
+
+    local function totalItemCount(itemName)
+        local inv  = mq.TLO.FindItemCount(itemName)() or 0
+        local bank = mq.TLO.FindBankItemCount(itemName)() or 0
+        return inv + bank
+    end
+
+    local function findItemAnywhere(itemName)
+        local item = mq.TLO.FindItem(itemName)
+        if item() then return item end
+        return mq.TLO.FindBankItem(itemName)
+    end
+
+    local function scanItemLocations(searchTerm)
+        local lower   = searchTerm:lower()
+        local totals  = {}
+        local order   = {}
+
+        local function record(name, count, location)
+            if not totals[name] then
+                totals[name] = { count = 0, locations = {} }
+                table.insert(order, name)
+            end
+            totals[name].count = totals[name].count + count
+            table.insert(totals[name].locations, location)
+        end
+
+        local function checkSlot(item, label)
+            if not item() then return end
+            local name = item.Name() or ''
+            if name:lower():find(lower, 1, true) then
+                record(name, item.Stack() or 1, label)
+            end
+            for s = 1, (item.Container() or 0) do
+                local sub = item.Item(s)
+                if sub() then
+                    local subName = sub.Name() or ''
+                    if subName:lower():find(lower, 1, true) then
+                        record(subName, sub.Stack() or 1, label .. ' slot ' .. s)
+                    end
+                end
+            end
+        end
+
+        for slot = 0,  21 do checkSlot(mq.TLO.Me.Inventory(slot), 'equip '  .. slot)        end
+        for slot = 22, 31 do checkSlot(mq.TLO.Me.Inventory(slot), 'bag '    .. (slot - 21)) end
+        for slot = 1,  24 do checkSlot(mq.TLO.Me.Bank(slot),      'bank '   .. slot)        end
+
+        return totals, order
+    end
+
     commandBus:register('FindItem', function(payload)
         local itemName = (payload.item or ''):gsub('_', ' ')
         if itemName == '' then return end
-        local results = searchInventory(itemName)
-        if #results == 0 then return end
+        if inventoryDedup('fi:' .. itemName:lower()) then return end
         local me = mq.TLO.Me.Name()
-        local totals, order = aggregateResults(results)
+        local totals, order = scanItemLocations(itemName)
+        if #order == 0 then return end
         local parts = {}
         for _, name in ipairs(order) do
             local t = totals[name]
@@ -356,19 +361,16 @@ function CommandRegistry:setup(commandBus, rt, config)
     commandBus:register('FindMissingItem', function(payload)
         local itemName = (payload.item or ''):gsub('_', ' ')
         if itemName == '' then return end
-        local results = searchInventory(itemName)
-        local me = mq.TLO.Me.Name()
-        if #results == 0 then
+        if inventoryDedup('fmi:' .. itemName:lower()) then return end
+        local me    = mq.TLO.Me.Name()
+        local count = totalItemCount(itemName)
+        if count == 0 then
             mq.cmdf('/dgt all [%s] missing %s', me, itemName)
             return
         end
-        local totals, order = aggregateResults(results)
-        local parts = {}
-        for _, name in ipairs(order) do
-            local t = totals[name]
-            table.insert(parts, string.format('%s x%d', name, t.count))
-        end
-        mq.cmdf('/dgt all [%s] %s', me, table.concat(parts, ' | '))
+        local item      = findItemAnywhere(itemName)
+        local foundName = item() and item.Name() or itemName
+        mq.cmdf('/dgt all [%s] %s x%d', me, foundName, count)
     end)
 
     commandBus:register('ClickItem', function(payload)
@@ -514,6 +516,52 @@ function CommandRegistry:setup(commandBus, rt, config)
         local maxDist = config:get('General.DistanceSetting') or 250
         if spawn.Distance() > maxDist then return end
 
+        local job = Job:new(spawn.ID(), targetName, spellName, 'spell', 0, gem)
+        rt.castService:enqueue(job)
+    end)
+
+    commandBus:register('TellPort', function(payload)
+        local targetName = payload.target
+        local dest       = (payload.dest or ''):gsub('_', ' '):lower()
+        local portType   = payload.type or 'tl'   -- 'tl' or 'portal'
+        if not targetName or targetName == '' or dest == '' then return end
+
+        if not config:get('Port.Enabled') then return end
+
+        local aliasSection = portType == 'portal' and 'Port.Wizard.Portal' or 'Port.Wizard.TL'
+        local aliases      = config:get(aliasSection) or {}
+        local spellName    = nil
+        for k, v in pairs(aliases) do
+            if k:lower() == dest then spellName = v; break end
+        end
+
+        if not spellName then
+            if payload.sender == mq.TLO.Me.Name() then
+                mq.cmdf('/tell %s Unknown destination: %s', targetName, dest)
+            end
+            return
+        end
+
+        if not hasMana() then
+            if payload.sender == mq.TLO.Me.Name() then
+                mq.cmdf('/tell %s Not enough mana, try again later.', targetName)
+            end
+            return
+        end
+
+        local action = portType == 'portal' and 'Portaling' or 'TLing'
+        local label  = portType == 'portal' and 'Portal' or 'TL'
+        if payload.sender == mq.TLO.Me.Name() then
+            mq.cmdf('/dgt all [SRL] %s %s to %s', action, targetName, dest)
+            mq.cmdf('/tell %s %s to %s incoming!', targetName, label, dest)
+        end
+
+        local spawn = mq.TLO.Spawn('pc =' .. targetName)
+        if not spawn() then return end
+        local maxDist = config:get('General.DistanceSetting') or 250
+        if spawn.Distance() > maxDist then return end
+
+        local gem = config:get('Port.Gem') or 8
         local job = Job:new(spawn.ID(), targetName, spellName, 'spell', 0, gem)
         rt.castService:enqueue(job)
     end)

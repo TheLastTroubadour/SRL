@@ -325,6 +325,9 @@ end
 function CastService:srlCast(job)
     Logging.Debug("Cast Util Export SRL Cast Start")
     self:memSpellIfNeeded(job)
+    if not mq.TLO.Me.SpellReady(job.name)() then
+        mq.delay(2000, function() return mq.TLO.Me.SpellReady(job.name)() end)
+    end
     local isSpellReady = mq.TLO.Me.SpellReady(job.name)()
     Logging.Debug(("Is spell ready %s --- %s "):format(job.name, tostring(isSpellReady)))
     if isSpellReady then

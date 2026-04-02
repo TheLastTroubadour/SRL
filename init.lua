@@ -18,7 +18,8 @@ local FollowService = require 'service.FollowService'
 local ImGui = require 'ImGui'
 local DEBUG = false
 local debugState = { visible = false }
--- local GroupStatusWindow = require 'window.GroupStatusWindow'  -- TODO: overlay, circle back
+local GroupStatusWindow = require 'window.GroupStatusWindow'
+local StatusService     = require 'service.StatusService'
 local State = require 'core.State'
 local HealService = require 'service.HealService'
 local TradeService = require 'service.TradeService'
@@ -277,9 +278,7 @@ local function DrawDebugWindow()
 
     end
 
-    if not ImGui.End() then
-        debugState.visible = false
-    end
+    ImGui.End()
 end
 
 
@@ -308,6 +307,11 @@ local function mainLoop()
     local scheduler = Scheduler:new()
     local castService = CastService:new(scheduler)
     local busService = Bus:new("SRL")
+    local statusService = StatusService:new()
+    GroupStatusWindow:setStatusService(statusService)
+    busService.actor:on('char_status', function(sender, data)
+        if data and data.data then statusService:update(data.data) end
+    end)
     castService:setBus(busService)
     local bufferController = BufferController:new(busService)
     local combatService = CombatService:new(castService, config)
@@ -409,7 +413,7 @@ local function mainLoop()
         ccDecision       = ccDecision,
         memSwapDecision  = memSwapDecision,
         debugState          = debugState,
-        -- groupStatusWindow   = GroupStatusWindow,
+        groupStatusWindow   = GroupStatusWindow,
         resourceDecision = resourceDecision,
     }, config)
 
@@ -455,10 +459,10 @@ local function mainLoop()
         end
     end)
 
-    -- mq.imgui.init("GroupStatusUI", function()
-    --     local ok, err = pcall(function() GroupStatusWindow:draw() end)
-    --     if not ok then print("GroupStatus UI Error:", err) end
-    -- end)
+    mq.imgui.init("GroupStatusUI", function()
+        local ok, err = pcall(function() GroupStatusWindow:draw() end)
+        if not ok then print("GroupStatus UI Error:", err) end
+    end)
 
     local lastZoneId  = mq.TLO.Zone.ID()
     local wasDead     = false
@@ -512,6 +516,20 @@ local function mainLoop()
         tradeService:update()
         cureService:update()
         melodyService:tick(ctx)
+
+        -- Broadcast own status for the group status window
+        local myStatus = {
+            name    = ctx.myName,
+            hp      = ctx.hp,
+            mana    = ctx.mana,
+            target  = mq.TLO.Target.CleanName() or '',
+            casting = ctx.casting or '',
+            dead    = ctx.dead == true,
+            zone    = mq.TLO.Zone.ShortName() or '',
+        }
+        statusService:update(myStatus)
+        busService.actor:broadcast('char_status', myStatus)
+
         mq.delay(50)
 
         Logging.Debug("Main While loop End")

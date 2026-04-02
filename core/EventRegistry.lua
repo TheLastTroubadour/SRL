@@ -23,8 +23,9 @@ function EventRegistry:init(services)
         mq.cmdf('/dgt all [%s] is out of %s!', mq.TLO.Me.Name(), kind)
     end
 
-    mq.event('SRL_OutOfFood',  'You are out of food.',  function() warnConsumable('food')  end)
-    mq.event('SRL_OutOfDrink', 'You are out of drink.', function() warnConsumable('drink') end)
+    mq.event('SRL_OutOfFood',       'You are out of food.',           function() warnConsumable('food')             end)
+    mq.event('SRL_OutOfDrink',      'You are out of drink.',          function() warnConsumable('drink')            end)
+    mq.event('SRL_OutOfFoodDrink',  'You are out of food and drink.', function() warnConsumable('food and drink')   end)
 
     -- Death: clear own buff timers so everything repolls on rez
     mq.event('SRL_Death', 'You have been slain by#*#', function()
@@ -103,6 +104,24 @@ function EventRegistry:init(services)
         if tlTrigger and tlTrigger:lower() == request then
             mq.cmdf('/dgae /srlevent TellTL target=%s sender=%s', sender, me)
             mq.cmdf('/srlevent TellTL target=%s sender=%s', sender, me)
+            return
+        end
+
+        -- TL tell:   "/tell WizName tl iceclad"   → single target translocate
+        -- Port tell: "/tell WizName port iceclad" → group portal
+        local tlDest   = request:match('^tl%s+(.+)$')
+        local portDest = request:match('^port%s+(.+)$')
+        if tlDest then
+            local dest = tlDest:gsub('%s+', '_')
+            mq.cmdf('/dgae /srlevent TellPort type=tl dest=%s target=%s sender=%s', dest, sender, me)
+            mq.cmdf('/srlevent TellPort type=tl dest=%s target=%s sender=%s', dest, sender, me)
+            return
+        end
+        if portDest then
+            local dest = portDest:gsub('%s+', '_')
+            mq.cmdf('/dgae /srlevent TellPort type=portal dest=%s target=%s sender=%s', dest, sender, me)
+            mq.cmdf('/srlevent TellPort type=portal dest=%s target=%s sender=%s', dest, sender, me)
+            return
         end
     end)
 end
