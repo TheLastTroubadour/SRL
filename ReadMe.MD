@@ -70,6 +70,7 @@ All commands use the unified `/srl <subcommand>` format.
 | `/srl castcombatbuffs` | Force-cast combat buffs on all bots immediately |
 | `/srl reload` | Reload YAML config |
 | `/srl restart` | Restart all bots |
+| `/srl overlay` | Toggle group status overlay (local) |
 | `/srl debug` | Toggle debug window (local) |
 | `/srl puller` | Toggle puller mode (local) |
 | `/srl count` | Show bot zone status (local) |
@@ -126,76 +127,6 @@ All commands use the unified `/srl <subcommand>` format.
 /srl fellowship include=Group
 ```
 
-> All burn and AA commands support `include=`, `exclude=`, and `include=Group` filters.
-
----
-
-### Spell Set
-
-```
-/srl set Main
-/srl set Fire
-/srl set Ice
-```
-
-Falls back to `Main` if the named set has no entries for a category. Also reloads the matching `GemSwap` set — use this to load cure gems for specific encounters.
-
----
-
-### Crowd Control
-
-```
-/srl maxmobs 0    # mez everything except the assist target
-/srl maxmobs 1    # leave 1 mob for an off-tank (default)
-/srl maxmobs 2    # two off-tanks
-```
-
-Override is in-memory only — reverts to the YAML value on restart.
-
----
-
-### Bard Melody
-
-```
-/srl melody dps
-/srl melody mana
-/srl stopmelody
-```
-
----
-
-### Item Search
-
-```
-/srl fi Commemorative Coin
-/srl fi coin include=Plate
-/srl fmi Commemorative Coin
-```
-
-`fi` — each bot that has the item reports which bag/slot via `/dgt all`. Partial match supported.
-`fmi` — each bot that does **not** have the item reports it.
-
----
-
-### Turn In
-
-```
-/srl turnin Bone Chips
-/srl turnin coin amount=4
-```
-
-Target the NPC first. Bots search their bags (partial match) and give the item directly to the NPC at staggered intervals.
-
----
-
-### Say
-
-```
-/srl say Welcome_to_the_guild_%t
-/srl say Good_fight include=Group
-```
-
-Bots target your current target and `/say` the phrase at staggered random intervals (500 ms – 20 s). Spaces must be underscores. `%t` is replaced with the target's name.
 
 ---
 
@@ -208,11 +139,33 @@ Bots target your current target and `/say` the phrase at staggered random interv
 
 ---
 
+### Group Status Overlay
+
+```
+/srl overlay
+```
+
+Toggles a local ImGui overlay showing live status for all bots in the same zone.
+
+| Column | Description |
+|---|---|
+| Name | Character name (red if dead) |
+| HP | Hit points % (green / yellow / red by threshold) |
+| Mana | Mana % (blue) |
+| End | Endurance % (orange) — hidden as `-` for classes with no endurance bar |
+| Target | Current target name |
+| Casting | Spell currently being cast (yellow) |
+
+Data updates every 50 ms via DanNet broadcast. Entries expire after 15 seconds of no updates or when the bot zones out.
+
+---
+
 ### Admin
 
 ```
 /srl reload         # reload YAML config on all bots
 /srl restart        # restart all bots
+/srl overlay        # toggle group status overlay (local only)
 /srl debug          # toggle debug overlay (local only)
 /srl puller         # toggle puller mode (local only)
 ```
@@ -238,19 +191,20 @@ Local command. Displays all DanNet peers grouped by zone status with distance fo
 [SRL] Out of Zone:
 [SRL]   MyBot1
 [SRL]   MyBot2
-```
-
+``` 
 ---
 
 ## Include / Exclude Filters
 
 Most commands support `include=` and `exclude=` filters to target specific bots.
 
-**Tokens:** character name, class short name (`CLR`, `BRD`, `SHM`...), armor type (`Silk`, `Leather`, `Chain`, `Plate`), or `Group`.
+**Tokens:** character name, class short name (`CLR`, `BRD`, `SHM`...), armor type (`Silk`, `Leather`, `Chain`, `Plate`), or `Group`. Multiple tokens are comma-separated. `exclude` always takes priority over `include`.
 
 ```
 /srl quickburn include=Plate         # only plate wearers
+/srl quickburn include=Plate,WAR     # plate wearers and warriors
 /srl assiston exclude=MyHealer1      # everyone except MyHealer1
+/srl assiston exclude=CLR,SHM        # exclude clerics and shamans
 /srl follow include=Group            # only group members
 ```
 

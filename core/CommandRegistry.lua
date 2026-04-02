@@ -86,6 +86,10 @@ function CommandRegistry:setup(commandBus, rt, config)
         rt.groupStatusWindow:toggle()
     end)
 
+    commandBus:register('ToggleConfigEditor', function()
+        rt.configEditorWindow:toggle()
+    end)
+
 
     commandBus:register('SetSpellSet', function(payload)
         local set = payload.set
@@ -265,7 +269,9 @@ function CommandRegistry:setup(commandBus, rt, config)
 
     commandBus:register('MedOff', function()
         State:setMedMode(false)
-        mq.cmd('/stand')
+        if not (State.flags.isPuller and mq.TLO.Me.Feigning()) then
+            mq.cmd('/stand')
+        end
     end)
 
     commandBus:register('ResourceOff', function()
@@ -405,6 +411,23 @@ function CommandRegistry:setup(commandBus, rt, config)
         local targetId = tonumber(payload.id)
         if not targetId or targetId == 0 then return end
         rt.cureDecision:claimTarget(targetId)
+    end)
+
+    commandBus:register('DebuffImmune', function()
+        if rt.debuffDecision then rt.debuffDecision:markLastCastImmune() end
+    end)
+
+    commandBus:register('ClaimRez', function(payload)
+        local corpseId = tonumber(payload.id)
+        if not corpseId or corpseId == 0 then return end
+        if rt.rezDecision then rt.rezDecision:claimCorpse(corpseId) end
+    end)
+
+    commandBus:register('RezTarget', function(payload)
+        local corpseId   = tonumber(payload.id)
+        local corpseName = (payload.name or ''):gsub('_', ' ')
+        if not corpseId or corpseId == 0 then return end
+        if rt.rezDecision then rt.rezDecision:queueManualRez(corpseId, corpseName) end
     end)
 
     commandBus:register('ClaimAbility', function(payload)
@@ -589,6 +612,7 @@ function CommandRegistry:setup(commandBus, rt, config)
         end
     end)
 
+    local tellBuffAnnounceCooldown = {}
     commandBus:register('TellBuff', function(payload)
         local targetName = payload.target
         if not targetName or targetName == '' then return end
@@ -600,9 +624,17 @@ function CommandRegistry:setup(commandBus, rt, config)
             return
         end
 
+        -- Dedup: /dgae sends to self so this handler fires twice on the originating bot
         if payload.sender == mq.TLO.Me.Name() then
-            mq.cmdf('/dgt all [SRL] Buffing %s', targetName)
-            mq.cmdf('/tell %s Buffs incoming!', targetName)
+            local now = mq.gettime()
+            local key = 'tellbuff:' .. targetName:lower()
+            if tellBuffAnnounceCooldown[key] and now < tellBuffAnnounceCooldown[key] then
+                -- skip announcement, but still enqueue buffs below
+            else
+                tellBuffAnnounceCooldown[key] = now + 3000
+                mq.cmdf('/dgt all [SRL] Buffing %s', targetName)
+                mq.cmdf('/tell %s Buffs incoming!', targetName)
+            end
         end
 
         local spells = config:get('Buffs.GroupBuff')

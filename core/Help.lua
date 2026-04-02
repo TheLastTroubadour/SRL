@@ -57,6 +57,8 @@ HELP['commands'] = {
     '[SRL]   /srl reload            - reload YAML config',
     '[SRL]   /srl restart           - restart all bots',
     '[SRL]   /srl debug             - toggle debug overlay (local)',
+    '[SRL]   /srl config            - toggle YAML config editor (local)',
+    '[SRL]   /srl rez               - request rez on current target (PC corpse)',
     '[SRL]   /srl puller            - toggle puller mode (local)',
     '[SRL]   /srl help <topic>      - show help for a topic',
 }

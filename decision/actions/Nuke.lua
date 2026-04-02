@@ -34,6 +34,10 @@ function NukeDecision:score(ctx)
 
     if ctx.casting then return 0 end
     if not ctx.assist.Id then return 0 end
+
+    -- Defer to GiftOfMana decision when the buff is active so the free cast
+    -- lands on the configured spell rather than whatever is up next in rotation.
+    if mq.TLO.Me.Buff('Gift of Mana')() then return 0 end
     if ctx.assist.distance and ctx.assist.distance > 200 then return 0 end
     if ctx.mana < 20 then return 0 end
 

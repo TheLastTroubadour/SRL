@@ -27,6 +27,11 @@ function EventRegistry:init(services)
     mq.event('SRL_OutOfDrink',      'You are out of drink.',          function() warnConsumable('drink')            end)
     mq.event('SRL_OutOfFoodDrink',  'You are out of food and drink.', function() warnConsumable('food and drink')   end)
 
+    -- Debuff immunity: back off that spell on that target for the session
+    mq.event('SRL_DebuffImmune', 'Your target is immune to#*#', function()
+        mq.cmd('/srlevent DebuffImmune')
+    end)
+
     -- Death: clear own buff timers so everything repolls on rez
     mq.event('SRL_Death', 'You have been slain by#*#', function()
         if buffService then buffService:reset() end

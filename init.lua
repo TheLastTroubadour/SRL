@@ -18,8 +18,9 @@ local FollowService = require 'service.FollowService'
 local ImGui = require 'ImGui'
 local DEBUG = false
 local debugState = { visible = false }
-local GroupStatusWindow = require 'window.GroupStatusWindow'
-local StatusService     = require 'service.StatusService'
+local GroupStatusWindow  = require 'window.GroupStatusWindow'
+local ConfigEditorWindow = require 'window.ConfigEditorWindow'
+local StatusService      = require 'service.StatusService'
 local State = require 'core.State'
 local HealService = require 'service.HealService'
 local TradeService = require 'service.TradeService'
@@ -63,13 +64,22 @@ local MelodyService = require 'service.MelodyService'
 local CommandRegistry = require 'core.CommandRegistry'
 local ConfigValidator = require 'util.ConfigValidator'
 
+-- Seed RNG uniquely per character so staggered delays differ across bots
+do
+    local name = mq.TLO.Me.Name() or ''
+    local seed = os.time()
+    for i = 1, #name do seed = seed + string.byte(name, i) * (i * 31) end
+    math.randomseed(seed)
+    math.random() math.random() -- discard first two (LCG warm-up)
+end
+
 RunTime = {}
 
 local function DrawDebugWindow()
 
     if not debugState.visible then return end
 
-    ImGui.SetNextWindowSize(400, 600, ImGuiCond_FirstUseEver)
+    ImGui.SetNextWindowSize(400, 600, 8) -- ImGuiCond_FirstUseEver = 8
 
     local open = true
     if ImGui.Begin("Combat Debug", open) then
@@ -309,6 +319,7 @@ local function mainLoop()
     local busService = Bus:new("SRL")
     local statusService = StatusService:new()
     GroupStatusWindow:setStatusService(statusService)
+    ConfigEditorWindow:setConfig(config)
     busService.actor:on('char_status', function(sender, data)
         if data and data.data then statusService:update(data.data) end
     end)
@@ -414,7 +425,9 @@ local function mainLoop()
         memSwapDecision  = memSwapDecision,
         debugState          = debugState,
         groupStatusWindow   = GroupStatusWindow,
-        resourceDecision = resourceDecision,
+        configEditorWindow  = ConfigEditorWindow,
+        resourceDecision    = resourceDecision,
+        rezDecision         = rezDecision,
     }, config)
 
     local engine = DecisionEngine:new({
@@ -462,6 +475,11 @@ local function mainLoop()
     mq.imgui.init("GroupStatusUI", function()
         local ok, err = pcall(function() GroupStatusWindow:draw() end)
         if not ok then print("GroupStatus UI Error:", err) end
+    end)
+
+    mq.imgui.init("ConfigEditorUI", function()
+        local ok, err = pcall(function() ConfigEditorWindow:draw() end)
+        if not ok then print("ConfigEditor UI Error:", err) end
     end)
 
     local lastZoneId  = mq.TLO.Zone.ID()
@@ -519,13 +537,14 @@ local function mainLoop()
 
         -- Broadcast own status for the group status window
         local myStatus = {
-            name    = ctx.myName,
-            hp      = ctx.hp,
-            mana    = ctx.mana,
-            target  = mq.TLO.Target.CleanName() or '',
-            casting = ctx.casting or '',
-            dead    = ctx.dead == true,
-            zone    = mq.TLO.Zone.ShortName() or '',
+            name       = ctx.myName,
+            hp         = ctx.hp,
+            mana       = ctx.mana,
+            endurance  = ctx.endurance,
+            target     = mq.TLO.Target.CleanName() or '',
+            casting    = ctx.casting or '',
+            dead       = ctx.dead == true,
+            zone       = mq.TLO.Zone.ShortName() or '',
         }
         statusService:update(myStatus)
         busService.actor:broadcast('char_status', myStatus)

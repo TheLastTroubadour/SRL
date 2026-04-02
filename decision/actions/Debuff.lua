@@ -4,14 +4,25 @@ local Target = require 'service.TargetService'
 local DebuffDecision = {}
 DebuffDecision.__index = DebuffDecision
 
+local IMMUNE_BACKOFF_MS = 3600000  -- 1 hour; effectively skip for the session
+
 function DebuffDecision:new(config)
     local self = setmetatable({}, DebuffDecision)
     self.name = "DebuffDecision"
     self.config = config
-    self.retryTimer = {}
+    self.retryTimer   = {}
     self.pendingTarget = nil
     self.pendingDebuff = nil
+    self.lastCastKey   = nil  -- set in execute() so immune events know what to back off
     return self
+end
+
+function DebuffDecision:markLastCastImmune()
+    if self.lastCastKey then
+        self.retryTimer[self.lastCastKey] = mq.gettime() + IMMUNE_BACKOFF_MS
+        print(string.format('[SRL] Debuff immune — skipping %s for this session', self.lastCastKey))
+        self.lastCastKey = nil
+    end
 end
 
 function DebuffDecision:score(ctx)
@@ -124,6 +135,7 @@ function DebuffDecision:execute(ctx)
         local spell = mq.TLO.Spell(buffName)
         local duration = spell and spell.Duration.TotalSeconds() or 60
         self.retryTimer[k] = mq.gettime() + math.max((duration * 1000) - 18000, 30000)
+        self.lastCastKey = k
 
         mq.cmdf('/useitem "%s"', debuff.spell)
     else
@@ -132,6 +144,7 @@ function DebuffDecision:execute(ctx)
         local spell = mq.TLO.Spell(debuff.spell)
         local duration = spell and spell.Duration.TotalSeconds() or 60
         self.retryTimer[k] = mq.gettime() + math.max((duration * 1000) - 18000, 30000)
+        self.lastCastKey = k
 
         mq.cmd('/stick off')
         mq.cmd('/nav stop')

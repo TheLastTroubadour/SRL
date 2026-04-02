@@ -32,34 +32,35 @@ end
 
 -- Called each tick from init.lua main loop.
 function BufferController:update()
-    local now = mq.gettime()
-    for i = #self.pendingCasts, 1, -1 do
-        local p = self.pendingCasts[i]
-        if now < p.checkAt then goto continue end
-        table.remove(self.pendingCasts, i)
+    local now      = mq.gettime()
+    local pending  = self.pendingCasts
+    self.pendingCasts = {}          -- swap to empty; actor callbacks append to the new list
 
-        local spellName = p.spellName
-        local buff = mq.TLO.Me.Buff('=' .. spellName)
-        local hasBuff = buff() ~= nil
-        local duration = hasBuff and (buff.Duration.TotalSeconds() or 0) or 0
+    for _, p in ipairs(pending) do
+        if now < p.checkAt then
+            table.insert(self.pendingCasts, p)  -- not ready yet, keep it
+        else
+            local spellName = p.spellName
+            local buff = mq.TLO.Me.Buff('=' .. spellName)
+            local hasBuff = buff() ~= nil
+            local duration = hasBuff and (buff.Duration.TotalSeconds() or 0) or 0
 
-        if not hasBuff then
-            local song = mq.TLO.Me.Song('=' .. spellName)
-            hasBuff = song() ~= nil
-            duration = hasBuff and (song.Duration.TotalSeconds() or 0) or 0
+            if not hasBuff then
+                local song = mq.TLO.Me.Song('=' .. spellName)
+                hasBuff = song() ~= nil
+                duration = hasBuff and (song.Duration.TotalSeconds() or 0) or 0
+            end
+
+            if hasBuff and duration > 0 then
+                self.bus.actor:broadcast('buff_received', {
+                    targetName = mq.TLO.Me.Name(),
+                    spellName  = spellName,
+                    duration   = duration,
+                    casterName = p.casterName,
+                    sender     = mq.TLO.Me.Name(),
+                })
+            end
         end
-
-        if hasBuff and duration > 0 then
-            self.bus.actor:broadcast('buff_received', {
-                targetName = mq.TLO.Me.Name(),
-                spellName  = spellName,
-                duration   = duration,
-                casterName = p.casterName,
-                sender     = mq.TLO.Me.Name(),
-            })
-        end
-
-        ::continue::
     end
 end
 

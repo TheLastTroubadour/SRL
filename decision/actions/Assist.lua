@@ -1,5 +1,6 @@
 local mq = require 'mq'
 local Target = require 'service.TargetService'
+local State  = require 'core.State'
 local AssistDecision = {}
 AssistDecision.__index = AssistDecision
 
@@ -13,6 +14,11 @@ end
 function AssistDecision:score(ctx)
 
     if not ctx.assist.Id then
+        return 0
+    end
+
+    -- Never assist (attack/stick) while FD — would cause puller to stand up
+    if State.flags.isPuller and mq.TLO.Me.Feigning() then
         return 0
     end
 

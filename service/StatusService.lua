@@ -17,6 +17,7 @@ function StatusService:update(data)
         name      = data.name,
         hp        = data.hp,
         mana      = data.mana,
+        endurance = data.endurance,
         target    = data.target,
         casting   = data.casting,
         dead      = data.dead,

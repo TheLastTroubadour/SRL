@@ -340,6 +340,9 @@ function CommandBus:init()
         elseif subcmd == 'overlay' then
             mq.cmd('/srlevent ToggleGroupStatus')
 
+        elseif subcmd == 'config' then
+            mq.cmd('/srlevent ToggleConfigEditor')
+
         elseif subcmd == 'debuffon' then
             local targetId = mq.TLO.Target.ID() or 0
             if targetId == 0 then
@@ -375,6 +378,23 @@ function CommandBus:init()
         elseif subcmd == 'aeoff' then
             mq.cmdf('/dgze /srlevent AEOff sender=%s%s', me, extra)
             mq.cmdf('/srlevent AEOff sender=%s%s', me, extra)
+
+        elseif subcmd == 'rez' then
+            local targetId = mq.TLO.Target.ID()
+            if not targetId or targetId == 0 then
+                print('[SRL] rez: no target selected')
+                return
+            end
+            if mq.TLO.Target.Type() ~= 'Corpse' then
+                print('[SRL] rez: target must be a PC corpse')
+                return
+            end
+            local rawName   = mq.TLO.Target.CleanName() or ''
+            local charName  = rawName:match("^(.+)'s [Cc]orpse$") or rawName
+            local nameArg   = (charName:gsub(' ', '_'))
+            mq.cmdf('/dgae /srlevent RezTarget id=%s name=%s', targetId, nameArg)
+            mq.cmdf('/srlevent RezTarget id=%s name=%s', targetId, nameArg)
+            print(string.format('[SRL] rez: requesting rez for %s (id %s)', charName, targetId))
 
         elseif subcmd == 'puller' then
             State.flags.isPuller = not State.flags.isPuller

@@ -81,6 +81,11 @@ function CombatService:handleMed()
         return
     end
 
+    -- puller is FD — don't sit/stand, just bail
+    if State.flags.isPuller and mq.TLO.Me.Feigning() then
+        return
+    end
+
     -- enter med mode
     if not State.caster.medMode and mana < medStart then
         State:setMedMode(true)

@@ -12,7 +12,7 @@ local function hpColor(pct)
     else return 0.9, 0.2, 0.2, 1.0 end
 end
 
-local function drawMemberRow(name, hp, mana, targetName, casting, dead)
+local function drawMemberRow(name, hp, mana, endurance, targetName, casting, dead)
     ImGui.TableNextRow()
 
     -- Name
@@ -38,6 +38,15 @@ local function drawMemberRow(name, hp, mana, targetName, casting, dead)
         ImGui.Text(manaStr)
     end
 
+    -- Endurance
+    ImGui.TableNextColumn()
+    local endStr = endurance and string.format("%d%%", endurance) or "-"
+    if endurance then
+        ImGui.TextColored(0.8, 0.5, 0.1, 1.0, endStr)
+    else
+        ImGui.Text(endStr)
+    end
+
     -- Target
     ImGui.TableNextColumn()
     ImGui.Text(targetName or "")
@@ -59,17 +68,18 @@ local function drawContent(statusService)
 
     -- ImGuiTableFlags: RowBg=64, BordersInnerV=512
     -- ImGuiTableColumnFlags: WidthFixed=2, WidthStretch=1
-    if not ImGui.BeginTable("GroupStatusTable", 5, 64 + 512) then return end
+    if not ImGui.BeginTable("GroupStatusTable", 6, 64 + 512) then return end
 
-    ImGui.TableSetupColumn("Name",    2,  72)
-    ImGui.TableSetupColumn("HP",      2,  45)
-    ImGui.TableSetupColumn("Mana",    2,  45)
-    ImGui.TableSetupColumn("Target",  2,  80)
-    ImGui.TableSetupColumn("Casting", 2, 144)
+    ImGui.TableSetupColumn("Name",      2,  72)
+    ImGui.TableSetupColumn("HP",        2,  45)
+    ImGui.TableSetupColumn("Mana",      2,  45)
+    ImGui.TableSetupColumn("End",       2,  45)
+    ImGui.TableSetupColumn("Target",    2,  80)
+    ImGui.TableSetupColumn("Casting",   2, 144)
     ImGui.TableHeadersRow()
 
     for _, entry in ipairs(statusService:getAll()) do
-        drawMemberRow(entry.name, entry.hp, entry.mana, entry.target, entry.casting, entry.dead)
+        drawMemberRow(entry.name, entry.hp, entry.mana, entry.endurance, entry.target, entry.casting, entry.dead)
     end
 
     ImGui.EndTable()
@@ -86,8 +96,8 @@ end
 function GroupStatusWindow:draw()
     if not self.visible then return end
 
-    ImGui.SetNextWindowSize(460, 220, 8) -- ImGuiCond_FirstUseEver = 8
-    local show = ImGui.Begin("Group Status")
+    ImGui.SetNextWindowSize(510, 220, 8) -- ImGuiCond_FirstUseEver = 8
+    local show = ImGui.Begin("Character Status")
 
     if show then
         local ok, err = pcall(drawContent, self.statusService)
