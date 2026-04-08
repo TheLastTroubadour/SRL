@@ -37,7 +37,9 @@ function NukeDecision:score(ctx)
 
     -- Defer to GiftOfMana decision when the buff is active so the free cast
     -- lands on the configured spell rather than whatever is up next in rotation.
-    if mq.TLO.Me.Buff('Gift of Mana')() then return 0 end
+    local hasGoM = mq.TLO.Me.Buff('Gift of Mana')() ~= nil
+             or mq.TLO.Me.Song('Gift of Mana')() ~= nil
+    if hasGoM then return 0 end
     if ctx.assist.distance and ctx.assist.distance > 200 then return 0 end
     if ctx.mana < 20 then return 0 end
 

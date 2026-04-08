@@ -55,10 +55,10 @@ function Wrapper:send(target, event, data)
 end
 
 function Wrapper:broadcast(event, data)
-    self.actor:send({
-        event = event,
-        data = data,
-        sender = data.sender
+    self.actor:send({mailbox = self.mailboxName}, {
+        event  = event,
+        data   = data,
+        sender = mq.TLO.Me.Name(),
     })
 end
 

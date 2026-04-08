@@ -417,6 +417,13 @@ function CommandRegistry:setup(commandBus, rt, config)
         if rt.debuffDecision then rt.debuffDecision:markLastCastImmune() end
     end)
 
+    commandBus:register('AddNoSlow', function(payload)
+        local id = tonumber(payload.id)
+        local name = (payload.name or ''):gsub('_', ' ')
+        if not id or id == 0 then return end
+        if rt.debuffDecision then rt.debuffDecision:addNoSlow(id, name) end
+    end)
+
     commandBus:register('ClaimRez', function(payload)
         local corpseId = tonumber(payload.id)
         if not corpseId or corpseId == 0 then return end

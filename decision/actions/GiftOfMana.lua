@@ -7,6 +7,11 @@ GiftOfMana.__index = GiftOfMana
 local CASTING_ROLES = { caster = true, healer = true, hybrid = true }
 local BUFF_NAME     = 'Gift of Mana'
 
+local function hasGiftOfMana()
+    return mq.TLO.Me.Buff(BUFF_NAME)() ~= nil
+        or mq.TLO.Me.Song(BUFF_NAME)() ~= nil
+end
+
 function GiftOfMana:new(config)
     local self = setmetatable({}, GiftOfMana)
     self.name   = "GiftOfMana"
@@ -26,7 +31,7 @@ function GiftOfMana:score(ctx)
     end
     if not hasRole then return 0 end
 
-    if not mq.TLO.Me.Buff(BUFF_NAME)() then return 0 end
+    if not hasGiftOfMana() then return 0 end
 
     local entry = self.config:get('GiftOfMana')
     if not entry or not entry.spell then return 0 end

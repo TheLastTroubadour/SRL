@@ -280,11 +280,14 @@ function Context:getHealerRole(name)
 end
 
 function Context:sortByPriority(list)
-    -- Preserve original order for ungrouped entries; sort by priority only within the same group
+    -- Preserve original order for ungrouped entries; sort by priority only within the same group.
+    -- priority: true (boolean) is used by DebuffDecision for score boosting — ignore it here.
     for i, v in ipairs(list) do v._idx = i end
     table.sort(list, function(a, b)
         if a.group and b.group and a.group == b.group then
-            return (a.priority or 99) < (b.priority or 99)
+            local pa = type(a.priority) == 'number' and a.priority or 99
+            local pb = type(b.priority) == 'number' and b.priority or 99
+            return pa < pb
         end
         return a._idx < b._idx
     end)

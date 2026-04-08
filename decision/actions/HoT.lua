@@ -53,62 +53,62 @@ function HoTDecision:score(ctx)
     local targets = ctx.self.heal.group.memberStatus
     if not targets or #targets == 0 then return 0 end
 
-    local best = self:findBest(targets)
-    if not best then return 0 end
+    -- HoT scores 92, Promised scores 91 — HoT wins when both are available
+    local hotBest = self:findBestForKey('Heals.HoTSpells', targets, false)
+    if hotBest then
+        self.pendingTarget = hotBest.target
+        self.pendingSpell  = hotBest.spell
+        return 92
+    end
 
-    self.pendingTarget = best.target
-    self.pendingSpell  = best.spell
-    return 92
+    local promisedBest = self:findBestForKey('Heals.PromisedSpells', targets, true)
+    if promisedBest then
+        self.pendingTarget = promisedBest.target
+        self.pendingSpell  = promisedBest.spell
+        return 91
+    end
+
+    return 0
 end
 
--- Searches HoTSpells then PromisedSpells for the lowest HP target
--- that needs a cast (below threshold, buff not present, spell ready).
+-- Finds the lowest-HP target that needs a cast for the given config key.
 -- HoTSpells: skip if buff is already present.
--- PromisedSpells: the buff fires the heal when it expires, so we must let it fall off.
---   Skip if buff is present. After it falls off, wait `buffer` seconds (default 3) before
---   recasting to ensure the promised heal has landed before applying the next one.
-function HoTDecision:findBest(targets)
+-- PromisedSpells: skip if buff is present; wait `buffer` seconds after it falls off.
+function HoTDecision:findBestForKey(configKey, targets, isPromised)
+    local spellsByRole = self.config:get(configKey)
+    if not spellsByRole then return nil end
+
     local best = nil
     local now  = mq.gettime()
 
-    for _, configKey in ipairs({ 'Heals.HoTSpells', 'Heals.PromisedSpells' }) do
-        local spellsByRole = self.config:get(configKey)
-        if not spellsByRole then goto nextKey end
+    for _, target in ipairs(targets) do
+        local spells = spellsByRole[target.role] or spellsByRole['normal']
+        if not spells then goto nextTarget end
 
-        local isPromised = (configKey == 'Heals.PromisedSpells')
+        for _, entry in ipairs(spells) do
+            if (target.hp or 100) > (entry.threshold or 100) then goto nextEntry end
+            if best and (target.hp or 100) >= (best.target.hp or 100) then goto nextEntry end
 
-        for _, target in ipairs(targets) do
-            local spells = spellsByRole[target.role] or spellsByRole['normal']
-            if not spells then goto nextTarget end
+            local buffName = entry.checkBuff or (entry.spell:gsub('%s+Rk%.%s*%w+$', ''))
+            local spawn = mq.TLO.Spawn('id ' .. target.id)
+            if not spawn() then goto nextEntry end
 
-            for _, entry in ipairs(spells) do
-                if (target.hp or 100) > (entry.threshold or 100) then goto nextEntry end
-                if best and (target.hp or 100) >= (best.target.hp or 100) then goto nextEntry end
+            if spawn.Buff(buffName)() then goto nextEntry end  -- buff active, let it fire
 
-                local buffName = entry.checkBuff or (entry.spell:gsub('%s+Rk%.%s*%w+$', ''))
-                local spawn = mq.TLO.Spawn('id ' .. target.id)
-                if not spawn() then goto nextEntry end
-
-                if spawn.Buff(buffName)() then goto nextEntry end  -- buff active, let it fire
-
-                if isPromised then
-                    -- Wait `buffer` seconds after the buff fell off before recasting
-                    local buffer = (entry.buffer or 3) * 1000
-                    local lastCast = self.promisedCastTime[target.id] or 0
-                    if (now - lastCast) < buffer then goto nextEntry end
-                end
-
-                if self:isReady(entry) then
-                    best = { target = target, spell = entry }
-                end
-
-                ::nextEntry::
+            if isPromised then
+                local buffer  = (entry.buffer or 3) * 1000
+                local lastCast = self.promisedCastTime[target.id] or 0
+                if (now - lastCast) < buffer then goto nextEntry end
             end
 
-            ::nextTarget::
+            if self:isReady(entry) then
+                best = { target = target, spell = entry }
+            end
+
+            ::nextEntry::
         end
 
-        ::nextKey::
+        ::nextTarget::
     end
 
     return best

@@ -61,7 +61,7 @@ function BurnService:activate(sectionKey)
 
     for _, v in ipairs(abilities) do
         if v.soloBot and v.soloBot:lower() ~= myName:lower() then goto continue end
-        local job = Job:new(myId, myName, v.name, v.type, 60, nil)
+        local job = Job:new(myId, myName, v.name, v.type, v.priority or 60, nil)
         job.burn = true
 
         if v.debuff and self.abilityDecision and assistTargetId ~= 0 then

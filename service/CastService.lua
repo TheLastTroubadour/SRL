@@ -126,8 +126,11 @@ function CastService:startWorker()
                 self.currentlyInFlight = job
                 local result = self:performCast(job)
                 if result == "NOT_READY" and (job.type == 'disc' or job.type == 'aa') then
-                    -- Burn job not ready yet — put it back so it fires when it comes off cooldown
+                    -- Burn job not ready yet — put it back so it fires when it comes off cooldown.
+                    -- Set notBefore to prevent immediate retry, which would starve lower-priority
+                    -- burn jobs and spin the coroutine without yielding.
                     self.queuedKeys[job.key] = nil
+                    job.notBefore = mq.gettime() + 500
                     self:enqueue(job)
                 else
                     if job.type == 'buff' and self:checkIfHasBuff(job) then

@@ -82,7 +82,8 @@ end
 -- ============================================================
 
 -- Track which autocomplete field is showing suggestions
-local acOpenId = nil
+local acOpenId         = nil
+local acListWasHovered = false  -- hovered state from previous frame (for click grace period)
 
 local function renderAutocomplete(item, field, uid, searchFn)
     local widgetId = field.key .. '_' .. uid
@@ -92,6 +93,9 @@ local function renderAutocomplete(item, field, uid, searchFn)
     ImGui.SetNextItemWidth(180)
     local new = ImGui.InputText('##inp_' .. widgetId, cur)
     local inputActive = ImGui.IsItemActive()
+    -- Capture screen position of the input for popup placement
+    local rx,  ry  = ImGui.GetItemRectMin()
+    local _,   ry2 = ImGui.GetItemRectMax()
 
     if new ~= cur then
         item[field.key] = new
@@ -99,38 +103,41 @@ local function renderAutocomplete(item, field, uid, searchFn)
         changed = true
     end
 
-    -- Track which field wants suggestions open
+    -- Keep open while input is active.
+    -- When input loses focus, keep open one extra frame if the suggestion window
+    -- was hovered last frame — this gives clicks time to register.
     if inputActive then
         acOpenId = widgetId
+    elseif acOpenId == widgetId and not acListWasHovered then
+        acOpenId = nil
     end
 
-    -- Show inline suggestion list when this field is active and has 2+ chars
-    local showList = acOpenId == widgetId and #cur >= 2
-    if showList then
+    local thisFrameHovered = false
+
+    if acOpenId == widgetId and #cur >= 2 then
         local matches = searchFn(cur)
         if #matches > 0 then
-            local listH = math.min(#matches * 20 + 6, 162)
-            if ImGui.BeginChild('##aclist_' .. widgetId, 186, listH, true) then
-                local listHovered = ImGui.IsWindowHovered()
-                for _, match in ipairs(matches) do
-                    if ImGui.Selectable(match .. '##acsel_' .. widgetId) then
-                        item[field.key] = match
-                        changed  = true
-                        acOpenId = nil
-                    end
-                end
-                -- Hide list when neither the input nor the suggestion list has focus
-                if not inputActive and not listHovered then
-                    acOpenId = nil
+            local listH = math.min(#matches * 20 + 8, 162)
+            -- Floating window positioned just below the input; never steals focus.
+            -- NoTitleBar=1 | NoResize=2 | NoMove=4 | NoScrollbar=8 |
+            -- NoCollapse=32 | NoSavedSettings=256 | NoFocusOnAppearing=4096
+            ImGui.SetNextWindowPos(rx, ry2 + 2, 0)
+            ImGui.SetNextWindowSize(184, listH, 0)
+            ImGui.Begin('##acwin_' .. widgetId, nil, 4399)
+            thisFrameHovered = ImGui.IsWindowHovered()
+            for _, match in ipairs(matches) do
+                if ImGui.Selectable(match) then
+                    item[field.key] = match
+                    changed        = true
+                    acOpenId       = nil
+                    thisFrameHovered = false
                 end
             end
-            ImGui.EndChild()
-        else
-            -- No matches — clear so the empty list doesn't linger
-            if not inputActive then acOpenId = nil end
+            ImGui.End()
         end
     end
 
+    acListWasHovered = thisFrameHovered
     return changed
 end
 

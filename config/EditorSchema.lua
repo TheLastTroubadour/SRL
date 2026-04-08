@@ -116,8 +116,9 @@ local SECTIONS = {
         labelKey = 'name',
         setNames = {'LongBurn', 'QuickBurn', 'FullBurn'},
         fields   = {
-            { key = 'name', label = 'Name', ftype = 'string', required = true },
-            { key = 'type', label = 'Type', ftype = 'enum',   options = BURN_TYPES, required = true },
+            { key = 'name',     label = 'Name',     ftype = 'string', required = true },
+            { key = 'type',     label = 'Type',     ftype = 'enum',   options = BURN_TYPES, required = true },
+            { key = 'priority', label = 'Priority', ftype = 'number' },
         },
         default  = { name = '', type = 'aa' },
     },

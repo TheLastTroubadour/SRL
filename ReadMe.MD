@@ -722,9 +722,9 @@ Debuff:
 
 > **Groups:** Entries with the same `group` value compete — `checkBuff` blocks the entire group if any listed buff is present. Only the first ready entry in a group fires. Entries without a group are independent and always considered.
 >
-> **`priority: true`** (boolean) raises the decision score to 115, above all heals. Use this on critical debuffs like slows. Numeric `priority` controls sort order within the list — these are separate fields.
+> **`priority: N`** (number) serves two purposes: any non-zero value raises the decision score to 115 (above all heals — use for slows and critical debuffs), and the numeric value controls sort order within a `group` (lower = higher priority).
 >
-> **`DebuffOnCommand`** uses all the same flags (`group`, `checkBuff`, `priority`) as `DebuffOnAssist`. Triggered by `/srl debuffon` and scores 115 regardless of `priority: true`.
+> **`DebuffOnCommand`** uses all the same flags (`group`, `checkBuff`, `priority`) as `DebuffOnAssist`. Triggered by `/srl debuffon` and scores 115 regardless of `priority`.
 >
 > **Spell sets:** Like nukes, debuff sets can be named (`DebuffOnAssist.Fire`, etc.) and switched with `/srl set`.
 

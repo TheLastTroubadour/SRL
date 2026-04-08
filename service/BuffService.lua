@@ -201,7 +201,7 @@ function BuffService:handlePollPromise(target, buffEntry, promise)
 
         local reply, err = promise:await()
 
-        local k = key(target, buffEntry.name)
+        local k = key(target, buffEntry.buffName or buffEntry.name)
         local now = mq.gettime()
 
         self.requested[k] = nil
@@ -359,7 +359,7 @@ function BuffService:resetForTarget(targetName)
 end
 
 function BuffService:setTakeHoldCooldownOnJob(job)
-    local k = key(job.targetName, job.name)
+    local k = key(job.targetName, job.buffName or job.name)
     local now = mq.gettime()
     local spellDuration = (mq.TLO.Spell(job.name).Duration.TotalSeconds() or 0) * 1000
     -- Schedule next check at 80% of spell duration, floor 30s, cap 10min

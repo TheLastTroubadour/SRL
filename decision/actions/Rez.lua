@@ -41,6 +41,7 @@ function RezDecision:score(ctx)
     self.pendingSpell  = nil
 
     if ctx.casting then return 0 end
+    if mq.TLO.Me.Invis() then return 0 end
     if mq.gettime() - self.lastRezTime < 12000 then return 0 end
 
     local spells = self.config:get('AutoRez.Spells') or {}

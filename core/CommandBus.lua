@@ -265,6 +265,14 @@ function CommandBus:init()
             mq.cmdf('/dgae /srlevent AddNoMez id=%s name=%s sender=%s', id, name, me)
             mq.cmdf('/srlevent AddNoMez id=%s name=%s sender=%s', id, name, me)
 
+        elseif subcmd == 'addnoslow' then
+            if not mq.TLO.Target() then return end
+            if mq.TLO.Target.Type() ~= 'NPC' then return end
+            local id   = mq.TLO.Target.ID()
+            local name = (mq.TLO.Target.CleanName() or ''):gsub(' ', '_')
+            mq.cmdf('/dgae /srlevent AddNoSlow id=%s name=%s sender=%s', id, name, me)
+            mq.cmdf('/srlevent AddNoSlow id=%s name=%s sender=%s', id, name, me)
+
         -- Item search
         elseif subcmd == 'clickitem' then
             local itemName, kvArgs = splitItemArgs(args)
@@ -431,11 +439,15 @@ function CommandBus:init()
             Help.show(args[1] and args[1]:lower() or 'topics')
 
         elseif subcmd == 'restart' then
+            -- Schedule self restart before stopping (timed persists after lua stops)
+            mq.cmd('/timed 30 /lua run srl')
+            -- Stop all peers
             mq.cmdf('/dgae /lua stop srl')
-            mq.delay(500)
+            -- Give peers 2 seconds to fully stop before telling them to start
+            mq.delay(2000)
+            -- Start peers (self timed restart already queued)
             mq.cmdf('/dgae /lua run srl')
-            mq.delay(500)
-            mq.cmd('/timed 10 /lua run srl')
+            -- Stop self last
             mq.cmd('/lua stop srl')
 
         else

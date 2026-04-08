@@ -5,6 +5,7 @@ local DebuffDecision = {}
 DebuffDecision.__index = DebuffDecision
 
 local IMMUNE_BACKOFF_MS = 3600000  -- 1 hour; effectively skip for the session
+local NOSLOW_FILE = 'config/srl/noslow.txt'
 
 function DebuffDecision:new(config)
     local self = setmetatable({}, DebuffDecision)
@@ -14,7 +15,55 @@ function DebuffDecision:new(config)
     self.pendingTarget = nil
     self.pendingDebuff = nil
     self.lastCastKey   = nil  -- set in execute() so immune events know what to back off
+    self.noSlowIds     = {}   -- [spawnId] = true
+    self.noSlowNames   = {}   -- [name:lower()] = true
+    self:loadNoSlowFile()
     return self
+end
+
+function DebuffDecision:loadNoSlowFile()
+    local f = io.open(NOSLOW_FILE, 'r')
+    if not f then return end
+    for line in f:lines() do
+        local name = line:match('^%s*(.-)%s*$')
+        if name and name ~= '' then
+            self.noSlowNames[name:lower()] = true
+        end
+    end
+    f:close()
+end
+
+function DebuffDecision:saveNoSlowFile()
+    local f = io.open(NOSLOW_FILE, 'w')
+    if not f then
+        print('[SRL] Warning: could not write ' .. NOSLOW_FILE)
+        return
+    end
+    for name in pairs(self.noSlowNames) do
+        f:write(name .. '\n')
+    end
+    f:close()
+end
+
+function DebuffDecision:addNoSlow(id, name)
+    self.noSlowIds[id] = true
+    if name and name ~= '' then
+        self.noSlowNames[name:lower()] = true
+        self:saveNoSlowFile()
+    end
+    print(string.format('[SRL] %s (%d) added to no-slow list', name or 'unknown', id))
+end
+
+function DebuffDecision:isSlowImmune(targetId)
+    if self.noSlowIds[targetId] then return true end
+    local spawn = mq.TLO.Spawn('id ' .. targetId)
+    if not spawn() then return false end
+    local name = spawn.CleanName()
+    if name and self.noSlowNames[name:lower()] then
+        self.noSlowIds[targetId] = true  -- cache by id
+        return true
+    end
+    return false
 end
 
 function DebuffDecision:markLastCastImmune()
@@ -67,7 +116,8 @@ function DebuffDecision:score(ctx)
         for i = 1, slots do
             local xt = mq.TLO.Me.XTarget(i)
             if xt() and xt.Type() == "NPC" and not xt.Dead() and xt.Aggressive()
-                    and xt.ID() ~= tonumber(ctx.assist.Id) then
+                    and xt.ID() ~= tonumber(ctx.assist.Id)
+                    and xt.LineOfSight() then
                 if self:findDebuff(ctx.self.debuff.xTarSpells, xt.ID()) then
                     return self.pendingDebuff.priority and 115 or 80
                 end
@@ -91,9 +141,19 @@ function DebuffDecision:findDebuff(spells, targetId)
             goto continue
         end
 
-        -- If checkBuff is present on target, mark entire group as handled and skip
+        -- Skip slow-group entries for mobs on the no-slow list
+        if group == 'slow' and self:isSlowImmune(targetId) then
+            handledGroups['slow'] = true
+            goto continue
+        end
+
+        -- If checkBuff is present on target, skip this entry.
+        -- passThrough: true means don't lock the group — subsequent entries in the
+        -- group can still fire (e.g. fast slow already landed → try long slow next).
         if debuff.checkBuff and self:targetHasBuff(targetId, debuff.checkBuff) then
-            if group then handledGroups[group] = true end
+            if group and not debuff.passThrough then
+                handledGroups[group] = true
+            end
             goto continue
         end
 

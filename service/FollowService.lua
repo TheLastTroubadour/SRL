@@ -23,7 +23,7 @@ function FollowService:follow(followId)
     mq.cmd("/stick off")
     mq.cmd('/nav stop')
     TargetService:getTargetById(followId)
-    mq.cmd("/stick 5")
+    mq.cmd("/stick 5 uw")
     Logging.Debug("Movement.follow End")
     State:updateLastActivity()
 end
