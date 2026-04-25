@@ -5,12 +5,13 @@ local Help  = require 'core.Help'
 local CommandBus = {}
 CommandBus.handlers = {}
 
--- Armor type → set of class short names
+-- Armor type / role group → set of class short names (keys are lowercase for case-insensitive lookup)
 local ARMOR_TYPES = {
-    Silk    = { WIZ=true, MAG=true, NEC=true, ENC=true },
-    Leather = { DRU=true, MNK=true, BST=true, ROG=true },
-    Chain   = { RNG=true, SHM=true, BRD=true },
-    Plate   = { WAR=true, PAL=true, SHD=true, CLR=true },
+    silk    = { WIZ=true, MAG=true, NEC=true, ENC=true },
+    leather = { DRU=true, MNK=true, BST=true, ROG=true },
+    chain   = { RNG=true, SHM=true, BRD=true },
+    plate   = { WAR=true, PAL=true, SHD=true, CLR=true },
+    melee   = { WAR=true, PAL=true, SHD=true, MNK=true, ROG=true, BER=true, RNG=true, BST=true, BRD=true },
 }
 
 -- Build "key=val key=val ..." string from a list of raw arg tokens,
@@ -32,8 +33,8 @@ local function matchesToken(token, myClass, myName, sender)
     if token:lower() == 'group' then
         return sender ~= nil and mq.TLO.Group.Member(sender)() ~= nil
     end
-    if ARMOR_TYPES[token] then
-        return ARMOR_TYPES[token][myClass] == true
+    if ARMOR_TYPES[token:lower()] then
+        return ARMOR_TYPES[token:lower()][myClass] == true
     end
     if myName:lower() == token:lower() then return true end
     return myClass == token:upper()
@@ -312,6 +313,14 @@ function CommandBus:init()
                 itemName:gsub(' ', '_'), me, xtra)
             mq.cmdf('/srlevent FindMissingItem item=%s sender=%s%s',
                 itemName:gsub(' ', '_'), me, xtra)
+
+        elseif subcmd == 'findslot' then
+            local slot = args[1]
+            if not slot or slot == '' then return end
+            local kvArgs = { unpack(args, 2) }
+            local xtra = buildExtra(kvArgs, { sender=true, slot=true })
+            mq.cmdf('/dgae /srlevent FindSlot slot=%s sender=%s%s', slot, me, xtra)
+            mq.cmdf('/srlevent FindSlot slot=%s sender=%s%s', slot, me, xtra)
 
         -- Status
         elseif subcmd == 'status' then

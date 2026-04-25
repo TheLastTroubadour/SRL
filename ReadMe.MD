@@ -12,6 +12,26 @@ EverQuest bot automation framework for Macroquest. Runs a utility AI scoring eng
 
 ---
 
+## Troubleshooting
+
+### `module 'lyaml' not found` on startup
+
+SRL uses PackageMan to install `lyaml` automatically on first run. If the install prompt appears, click **Install**. If the install fails (common after a LuaJIT version update because the pre-built rock may not be available yet for the new version), install it manually from your MQ directory:
+
+```
+.\luarocks.exe --lua-version 5.1 --only-server "https://luarocks.macroquest.org/2.1.1774638290/" install --deps-mode none --tree "modules\2.1.1774638290\luarocks" lyaml
+```
+
+Replace `2.1.1774638290` with your actual LuaJIT version — it appears in the error path and matches the folder name inside your `modules\` directory. Run this from your MQ install directory (where `luarocks.exe` lives).
+
+If luarocks can't reach the server for the new version yet, copy from the previously-installed version instead:
+
+```
+xcopy "modules\<old_version>" "modules\<new_version>" /E /I
+```
+
+---
+
 ## Slash Commands
 
 All commands use the unified `/srl <subcommand>` format.
@@ -62,6 +82,7 @@ All commands use the unified `/srl <subcommand>` format.
 | `/srl set <name>` | Switch spell set |
 | `/srl maxmobs <n>` | Override max tanked mobs |
 | `/srl addnomez` | Add current target to no-mez list |
+| `/srl addnoslow` | Add current target to no-slow list (skips all `group: slow` debuffs) |
 | `/srl fi <item>` | Find item in bags |
 | `/srl fmi <item>` | Find missing item |
 | `/srl status [threshold]` | Report unspent AAs |
@@ -271,7 +292,7 @@ The underlying event system uses `/srlevent` to pass commands and key=value payl
 
 Each character has a config file at:
 ```
-srl/config/bot_yaml/<CharacterName>_<Server>.yaml
+config/srl/config/<CharacterName>_<Server>.yaml
 ```
 
 A default file is generated on first run. Key sections:
@@ -685,30 +706,29 @@ Debuff:
     Main:
       - spell: My Malo Rk. III
         gem: 3
-      - spell: My Slow Rk. III
+      - spell: My Fast Slow Rk. III
         gem: 2
         group: slow             # group entries: only one per group fires per target
-        checkBuff: My Slow      # skip this entry if buff already present (string or list)
+        checkBuff: My Fast Slow # skip this entry if buff already present (string or list)
+        passThrough: true       # if checkBuff matches, don't lock the group — try next entry
         priority: 1             # sort order within the spell list (lower = higher priority)
-        highPriority: true      # score 115 — fires before heals (use for slows/critical debuffs)
-      - spell: My Backup Slow Rk. II
+      - spell: My Long Slow Rk. II
         gem: 4
         group: slow
-        checkBuff:              # list form — skip if any of these are present
-          - My Slow
-          - My Backup Slow
+        checkBuff: My Long Slow # only check own buff — fires when fast slow is on CD or already landed
         priority: 2
   DebuffOnCommand:              # triggered by /srl debuffon — same flags as DebuffOnAssist
     Main:
-      - spell: My Slow Rk. III
+      - spell: My Fast Slow Rk. III
         gem: 2
         group: slow
-        checkBuff: My Slow
+        checkBuff: My Fast Slow
+        passThrough: true
         priority: 1
-      - spell: My Backup Slow Rk. II
+      - spell: My Long Slow Rk. II
         gem: 4
         group: slow
-        checkBuff: My Slow
+        checkBuff: My Long Slow
         priority: 2
       - spell: My Malo Rk. III
         gem: 3
@@ -720,11 +740,17 @@ Debuff:
         gem: 3
 ```
 
-> **Groups:** Entries with the same `group` value compete — `checkBuff` blocks the entire group if any listed buff is present. Only the first ready entry in a group fires. Entries without a group are independent and always considered.
+> **Groups:** Entries with the same `group` value compete — only one entry per group fires per target per tick. Entries without a group are independent and always considered.
+>
+> **`checkBuff`** skips the entry if any listed buff is already on the target (string or list). Normally this also locks the group, preventing further entries from being evaluated. Use `passThrough: true` to skip without locking — the next entry in the group is still evaluated.
+>
+> **`passThrough: true`** is the key to fast-slow / long-slow setups: the fast slow has `passThrough: true` so that when it's already on the target, the group stays unlocked and the long slow is evaluated next. Without it, the long slow would never fire once the fast slow has landed.
 >
 > **`priority: N`** (number) serves two purposes: any non-zero value raises the decision score to 115 (above all heals — use for slows and critical debuffs), and the numeric value controls sort order within a `group` (lower = higher priority).
 >
-> **`DebuffOnCommand`** uses all the same flags (`group`, `checkBuff`, `priority`) as `DebuffOnAssist`. Triggered by `/srl debuffon` and scores 115 regardless of `priority`.
+> **`DebuffOnCommand`** uses all the same flags (`group`, `checkBuff`, `passThrough`, `priority`) as `DebuffOnAssist`. Triggered by `/srl debuffon` and scores 115 regardless of `priority`.
+>
+> **No-slow list:** `/srl addnoslow` adds the current target to an in-memory + persistent list (`config/srl/noslow.txt`). All `group: slow` entries are skipped for mobs on this list. Persists across restarts.
 >
 > **Spell sets:** Like nukes, debuff sets can be named (`DebuffOnAssist.Fire`, etc.) and switched with `/srl set`.
 

@@ -498,6 +498,7 @@ local function mainLoop()
             castService:clearCombatQueue()
             cureService:reset()
             cureDecision:reset()
+            context.raidSpawnIdCache = {}
             busService.actor:broadcast('reset_buffs_for_me', { sender = mq.TLO.Me.Name() })
         end
 
@@ -545,6 +546,7 @@ local function mainLoop()
             casting    = ctx.casting or '',
             dead       = ctx.dead == true,
             zone       = mq.TLO.Zone.ShortName() or '',
+            class      = ctx.myClass or '',
         }
         statusService:update(myStatus)
         busService.actor:broadcast('char_status', myStatus)

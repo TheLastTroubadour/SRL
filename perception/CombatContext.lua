@@ -22,6 +22,7 @@ function Context:new(config)
     self.assistType       = config:get('AssistSettings.type') or 'off'
     self.stickPoint       = config:get('AssistSettings.meleeStickPoint') or 'behind'
     self.stickDistance    = config:get('AssistSettings.meleeStickDistance') or 10
+    self.raidSpawnIdCache = {}  -- name → spawn ID cache to avoid per-tick name lookups
     self:reloadSet('Main')
     return self
 end
@@ -187,7 +188,7 @@ function Context:build(state)
 
                 if m() and m.Spawn() and not m.Dead() then
                     local name = m.CleanName()
-                    if not seen[name] then
+                    if name and not seen[name] then
                         seen[name] = true
                         local role = self:getHealerRole(name)
                         table.insert(ctx.self.heal.group.memberStatus, {
@@ -207,12 +208,20 @@ function Context:build(state)
                 if r() and not r.Dead() then
                     local name = r.CleanName()
                     if name and not seen[name] then
-                        local spawn = mq.TLO.Spawn('pc =' .. name)
-                        if spawn() then
+                        -- Use cached spawn ID; resolve via name lookup only on first sight
+                        local id = self.raidSpawnIdCache[name]
+                        if not id then
+                            local spawn = mq.TLO.Spawn('pc =' .. name)
+                            if spawn() then
+                                id = spawn.ID()
+                                self.raidSpawnIdCache[name] = id
+                            end
+                        end
+                        if id then
                             seen[name] = true
                             local role = self:getHealerRole(name)
                             table.insert(ctx.self.heal.group.memberStatus, {
-                                id = spawn.ID(),
+                                id = id,
                                 name = name,
                                 hp = r.PctHPs(),
                                 role = role

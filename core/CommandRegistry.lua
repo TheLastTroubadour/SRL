@@ -301,14 +301,14 @@ function CommandRegistry:setup(commandBus, rt, config)
 
     local function totalItemCount(itemName)
         local inv  = mq.TLO.FindItemCount(itemName)() or 0
-        local bank = mq.TLO.FindBankItemCount(itemName)() or 0
+        local bank = mq.TLO.FindItemBankCount(itemName)() or 0
         return inv + bank
     end
 
     local function findItemAnywhere(itemName)
         local item = mq.TLO.FindItem(itemName)
         if item() then return item end
-        return mq.TLO.FindBankItem(itemName)
+        return mq.TLO.FindItemBank(itemName)
     end
 
     local function scanItemLocations(searchTerm)
@@ -377,6 +377,37 @@ function CommandRegistry:setup(commandBus, rt, config)
         local item      = findItemAnywhere(itemName)
         local foundName = item() and item.Name() or itemName
         mq.cmdf('/dgt all [%s] %s x%d', me, foundName, count)
+    end)
+
+    local SLOT_ALIASES = {
+        ears    = { 'leftear',    'rightear'   },
+        wrists  = { 'leftwrist',  'rightwrist' },
+        fingers = { 'leftfinger', 'rightfinger' },
+    }
+
+    local function getSlotItem(s)
+        local n = tonumber(s)
+        if n then return mq.TLO.Me.Inventory(n) end
+        return mq.TLO.InvSlot(s).Item
+    end
+
+    commandBus:register('FindSlot', function(payload)
+        local slot = payload.slot or ''
+        if slot == '' then return end
+        if inventoryDedup('findslot:' .. slot:lower()) then return end
+        local me    = mq.TLO.Me.Name()
+        local slots = SLOT_ALIASES[slot:lower()] or { slot }
+        local parts = {}
+        for _, s in ipairs(slots) do
+            local item = getSlotItem(s)
+            if item and item() then
+                local link = item.ItemLink('CLICKABLE')() or item.Name() or '(unknown)'
+                table.insert(parts, s .. ': ' .. link)
+            else
+                table.insert(parts, s .. ': empty')
+            end
+        end
+        mq.cmdf('/dgt all [%s] %s', me, table.concat(parts, ' | '))
     end)
 
     commandBus:register('ClickItem', function(payload)
