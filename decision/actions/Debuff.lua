@@ -198,6 +198,19 @@ function DebuffDecision:execute(ctx)
         self.lastCastKey = k
 
         mq.cmdf('/useitem "%s"', debuff.spell)
+    elseif entryType == 'aa' then
+        if not mq.TLO.Me.AltAbilityReady(debuff.spell)() then return end
+
+        local spell = mq.TLO.Me.AltAbility(debuff.spell).Spell
+        local duration = (spell and spell.Duration.TotalSeconds()) or 60
+        self.retryTimer[k] = mq.gettime() + math.max((duration * 1000) - 18000, 30000)
+        self.lastCastKey = k
+
+        mq.cmdf('/alt activate "%s"', debuff.spell)
+        local castTime = mq.TLO.Me.AltAbility(debuff.spell).Spell.CastTime() or 0
+        if castTime > 0 then
+            mq.delay(castTime + 500, function() return not mq.TLO.Me.Casting() end)
+        end
     else
         if not mq.TLO.Me.SpellReady(debuff.spell)() then return end
 
@@ -222,6 +235,8 @@ function DebuffDecision:isEntryReady(key, debuff)
     if entryType == 'item' then
         local item = mq.TLO.FindItem('=' .. debuff.spell)
         return item() and (item.TimerReady() or 1) == 0
+    elseif entryType == 'aa' then
+        return mq.TLO.Me.AltAbilityReady(debuff.spell)() == true
     else
         return mq.TLO.Me.SpellReady(debuff.spell)() == true
     end

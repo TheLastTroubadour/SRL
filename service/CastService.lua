@@ -26,6 +26,10 @@ function CastService:setBus(bus)
     self.bus = bus
 end
 
+function CastService:setMelodyService(melodyService)
+    self.melodyService = melodyService
+end
+
 function CastService:enqueue(job)
     if self.queuedKeys[job.key] then return end
 
@@ -248,10 +252,22 @@ end
 function CastService:castItem(job)
     local item = mq.TLO.FindItem('=' .. job.name)
     if not item() then return end
+
+    local resumeMelody = nil
+    if self.melodyService and mq.TLO.Me.Class.ShortName() == 'BRD' then
+        resumeMelody = self.melodyService.active
+        self.melodyService:stop()
+        mq.delay(100)
+    end
+
     mq.cmdf('/useitem "%s"', job.name)
     local castTime = item.Clicky.CastTime() or 0
     if castTime > 0 then
         mq.delay(castTime + 500, function() return not mq.TLO.Me.Casting() end)
+    end
+
+    if resumeMelody then
+        self.melodyService:play(resumeMelody)
     end
 end
 
@@ -278,8 +294,7 @@ function CastService:castSpell(job)
         return
     end
     if job.type == 'buff' and not job.force then
-        local alreadyHasBuff = self:checkIfHasBuff(job)
-        if alreadyHasBuff then
+        if self:checkIfHasBuff(job) then
             return
         end
     end
@@ -287,21 +302,17 @@ function CastService:castSpell(job)
 end
 
 function CastService:checkIfHasBuff(job)
-    if(mq.TLO.Target.ID() ~= job.targetId) then
-        Target:getTargetById(job.targetId)
-    end
-
-    local checkName = job.buffName or job.name
-    if mq.TLO.Target.Buff('=' .. checkName)() then
+    -- Check distributed cache first — populated by each bot broadcasting its own buff changes
+    if self.buffService and self.buffService:hasKnownBuff(job.targetName, job.buffName or job.name) then
         return true
     end
-
-    -- Also check base name without rank suffix (e.g. "Hand of Tenacity Rk. III" -> "Hand of Tenacity")
-    local baseName = checkName:gsub('%s+Rk%.%s*%a+$', '')
-    if baseName ~= checkName and mq.TLO.Target.Buff('=' .. baseName)() then
-        return true
+    -- Fall back to target buff window, only reliable when already targeting this character
+    if mq.TLO.Target.ID() == job.targetId then
+        local checkName = job.buffName or job.name
+        if mq.TLO.Target.Buff('=' .. checkName)() then return true end
+        local baseName = checkName:gsub('%s+Rk%.%s*%a+$', '')
+        if mq.TLO.Target.Buff(baseName)() then return true end
     end
-
     return false
 end
 
@@ -361,6 +372,12 @@ function CastService:clearCombatQueue()
             table.remove(self.queue, i)
         end
     end
+end
+
+function CastService:clearQueue()
+    self.queue            = {}
+    self.queuedKeys       = {}
+    self.currentlyInFlight = nil
 end
 
 function CastService:interruptCasting()

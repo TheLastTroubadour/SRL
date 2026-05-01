@@ -1,6 +1,7 @@
 local mq = require 'mq'
 local Job = require 'model.Job'
 local State = require 'core.State'
+local SpellUtil = require 'util.SpellUtil'
 
 -- 2.0 first, 1.5 second. 1.0 epics not included. CLR intentionally omitted.
 local CLASS_EPICS = {
@@ -61,7 +62,8 @@ function BurnService:activate(sectionKey)
 
     for _, v in ipairs(abilities) do
         if v.soloBot and v.soloBot:lower() ~= myName:lower() then goto continue end
-        local job = Job:new(myId, myName, v.name, v.type, v.priority or 60, nil)
+        local resolvedName = SpellUtil.resolveRank(v.name, v.type)
+        local job = Job:new(myId, myName, resolvedName, v.type, v.priority or 60, nil)
         job.burn = true
 
         if v.debuff and self.abilityDecision and assistTargetId ~= 0 then
@@ -87,6 +89,17 @@ function BurnService:activate(sectionKey)
         end
         ::continue::
     end
+end
+
+function BurnService:tick()
+    if not State.flags.expMode then return end
+    if not State.assist.targetId then return end
+
+    local now = mq.gettime()
+    if self._lastExpActivation and now - self._lastExpActivation < 2000 then return end
+    self._lastExpActivation = now
+
+    self:activate('Burn.ExpMode')
 end
 
 -- Clicks the character's epic. Checks YAML Epic.name override first,

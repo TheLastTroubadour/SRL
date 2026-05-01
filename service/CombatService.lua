@@ -4,6 +4,7 @@ local State = require 'core.State'
 local Job = require 'model.Job'
 local TableUtil = require 'util.TableUtil'
 local TargetService = require 'service.TargetService'
+local SpellUtil = require 'util.SpellUtil'
 CombatService.__index = CombatService
 
 local IDLE_DELAY = 5000
@@ -133,9 +134,9 @@ function CombatService:getAbilitiesFromKey(key)
     local jobList = {}
     if values then
         for _, v in ipairs(values) do
-            local abilityName = v.Ability
-            local type = v.type or 'ability'
-            local job = Job:new(nil, nil, tostring(abilityName), type, 50, nil)
+            local abilityType = v.type or 'ability'
+            local abilityName = SpellUtil.resolveRank(v.Ability, abilityType)
+            local job = Job:new(nil, nil, tostring(abilityName), abilityType, 50, nil)
             if v.debuff then
                 job.abilityHasDebuff = true
             end
@@ -152,7 +153,7 @@ function CombatService:getNukesFromKey(key)
     local jobList = {}
     if values then
         for _, v in ipairs(values) do
-            local spellName = v.spell
+            local spellName = SpellUtil.resolveRank(v.spell, 'nuke')
             local gem = v.gem or 8
             local job = Job:new(nil, nil, spellName, 'nuke', 50, gem)
             table.insert(jobList, job)

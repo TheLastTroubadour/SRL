@@ -82,7 +82,7 @@ end
 function ResourceDecision:execute(ctx)
 
     if ctx.myClass == 'BRD' and self.melodyService then
-        self.melodyService:stop()
+        mq.cmd('/stopsong')
     end
 
     if not mq.TLO.Me.Sitting() then

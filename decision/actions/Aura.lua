@@ -78,9 +78,12 @@ function AuraDecision:execute(ctx)
 end
 
 function AuraDecision:isActive(spellName)
+    local base = spellName:gsub('%s+Rk%.%s*%a+$', '')
     for i = 1, 2 do
-        if mq.TLO.Me.Aura(i)() == spellName then
-            return true
+        local active = mq.TLO.Me.Aura(i)()
+        if active then
+            local activeBase = active:gsub('%s+Rk%.%s*%a+$', '')
+            if activeBase == base then return true end
         end
     end
     return false

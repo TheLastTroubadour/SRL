@@ -331,6 +331,7 @@ local function mainLoop()
     local combatController = CombatController:new(combatService, config)
     local buffService = BuffService:new(busService, scheduler, combatService, castService, config)
     castService.buffService = buffService
+    buffService:startWatcher()
 
     busService.actor:on('reset_buffs_for_me', function(sender, data)
         local name = data and data.data and data.data.sender
@@ -343,6 +344,13 @@ local function mainLoop()
         local d = data and data.data
         if d and d.targetName and d.spellName and d.duration then
             buffService:onBuffReceived(d.targetName, d.spellName, d.duration)
+        end
+    end)
+
+    busService.actor:on('buff_removed', function(sender, data)
+        local d = data and data.data
+        if d and d.targetName and d.spellName then
+            buffService:onBuffRemoved(d.targetName, d.spellName)
         end
     end)
 
@@ -375,6 +383,7 @@ local function mainLoop()
     local cureService = CureService:new(config)
     local cureDecision = CureDecision:new(config)
     local melodyService = MelodyService:new(config)
+    castService:setMelodyService(melodyService)
 
     local resourceDecision = ResourceDecision:new(melodyService)
     local nukeDecision = NukeDecision:new(config)
@@ -495,7 +504,7 @@ local function mainLoop()
             lastZoneId = currentZoneId
             State:stopAssist()
             State:stopFollow()
-            castService:clearCombatQueue()
+            castService:clearQueue()
             cureService:reset()
             cureDecision:reset()
             context.raidSpawnIdCache = {}
@@ -507,7 +516,7 @@ local function mainLoop()
         if isDead and not wasDead then
             busService.actor:broadcast('reset_buffs_for_me', { sender = mq.TLO.Me.Name() })
             State:clearCombatState()
-            castService:clearCombatQueue()
+            castService:clearQueue()
         end
         wasDead = isDead
 
@@ -535,6 +544,7 @@ local function mainLoop()
         tradeService:update()
         cureService:update()
         melodyService:tick(ctx)
+        burnService:tick()
 
         -- Broadcast own status for the group status window
         local myStatus = {

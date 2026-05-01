@@ -1,5 +1,6 @@
 local mq = require 'mq'
 local Target = require 'service.TargetService'
+local SpellUtil = require 'util.SpellUtil'
 
 local CureDecision = {}
 CureDecision.__index = CureDecision
@@ -35,7 +36,7 @@ function CureDecision:loadSpells()
     for _, v in ipairs(list) do
         if v.name and v.type then
             table.insert(result, {
-                name       = v.name,
+                name       = SpellUtil.resolveRank(v.name, v.spelltype or 'spell'),
                 type       = v.type,          -- comma-separated cure types this spell covers
                 gem        = v.gem,           -- nil for AA
                 spelltype  = v.spelltype or 'spell',  -- 'spell' or 'aa'

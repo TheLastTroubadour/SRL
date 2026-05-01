@@ -64,6 +64,7 @@ function BufferController:update()
     end
 end
 
+
 function BufferController:handleRequest(sender, data)
     local spell = data.data.spell
     local characterId = mq.TLO.Me.ID()

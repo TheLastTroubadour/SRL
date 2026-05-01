@@ -3,6 +3,7 @@ local State = require 'core.State'
 local TargetService = require 'service.TargetService'
 local TableUtil = require 'util.TableUtil'
 local Job = require 'model.Job'
+local SpellUtil = require 'util.SpellUtil'
 
 local DebuffService = {}
 DebuffService.__index = DebuffService
@@ -12,7 +13,16 @@ function DebuffService:new(castService, config)
 
     self.config = config
     self.castService = castService
-    self.debuffsOnAssist = self.config:get('Debuff.DebuffOnAssist.Main') or {}
+    local rawDebuffs = self.config:get('Debuff.DebuffOnAssist.Main') or {}
+    self.debuffsOnAssist = {}
+    for _, d in ipairs(rawDebuffs) do
+        local entry = {}
+        for k, v in pairs(d) do entry[k] = v end
+        if entry.spell then
+            entry.spell = SpellUtil.resolveRank(entry.spell, 'spell')
+        end
+        table.insert(self.debuffsOnAssist, entry)
+    end
 
     self.debuffsOnCommand = {}
     self.debuffEnabledForXTargets = self.config:get('Debuff.DebuffTargetsOnXTarEnabled') or false
@@ -118,7 +128,7 @@ function DebuffService:getDebuffInformationFromKey(key)
     local jobList = {}
     if values then
         for _, v in ipairs(values) do
-            local spellName = v.spell
+            local spellName = SpellUtil.resolveRank(v.spell, 'spell')
             local gem = v.gem or 8
             local job = Job:new(nil, nil, spellName, 'spell', 150, gem)
             table.insert(jobList, job)

@@ -1,5 +1,6 @@
 local mq = require 'mq'
 local Target = require 'service.TargetService'
+local SpellUtil = require 'util.SpellUtil'
 
 -- Handles HoT (Heal over Time) and Promised heal spells.
 -- Fires on the lowest-HP group/raid/xtarget member that:
@@ -86,6 +87,10 @@ function HoTDecision:findBestForKey(configKey, targets, isPromised)
         if not spells then goto nextTarget end
 
         for _, entry in ipairs(spells) do
+            -- Lazy-resolve rank once; stored on the config entry object for reuse
+            if not entry._rspell then
+                entry._rspell = SpellUtil.resolveRank(entry.spell, entry.type or 'spell')
+            end
             if (target.hp or 100) > (entry.threshold or 100) then goto nextEntry end
             if best and (target.hp or 100) >= (best.target.hp or 100) then goto nextEntry end
 
@@ -116,12 +121,13 @@ end
 
 function HoTDecision:isReady(entry)
     local t = entry.type or 'spell'
+    local name = entry._rspell or entry.spell
     if t == 'spell' then
-        return mq.TLO.Me.SpellReady(entry.spell)() == true
+        return mq.TLO.Me.SpellReady(name)() == true
     elseif t == 'aa' then
-        return mq.TLO.Me.AltAbilityReady(entry.spell)() == true
+        return mq.TLO.Me.AltAbilityReady(name)() == true
     elseif t == 'item' then
-        local item = mq.TLO.FindItem('=' .. entry.spell)
+        local item = mq.TLO.FindItem('=' .. name)
         return item() and (item.TimerReady() or 1) == 0
     end
     return false
@@ -136,6 +142,7 @@ function HoTDecision:execute(ctx)
 
     local entry    = self.pendingSpell
     local t        = entry.type or 'spell'
+    local name     = entry._rspell or entry.spell
     local isPromised = false
     local spellsByRole = self.config:get('Heals.PromisedSpells')
     if spellsByRole then
@@ -146,13 +153,13 @@ function HoTDecision:execute(ctx)
     end
 
     if t == 'spell' then
-        local gem = mq.TLO.Me.Gem(entry.spell)() or entry.gem
+        local gem = mq.TLO.Me.Gem(name)() or entry.gem
         if not gem then return end
         mq.cmdf('/cast %s', gem)
     elseif t == 'aa' then
-        mq.cmdf('/alt activate "%s"', entry.spell)
+        mq.cmdf('/alt activate "%s"', name)
     elseif t == 'item' then
-        mq.cmdf('/useitem "%s"', entry.spell)
+        mq.cmdf('/useitem "%s"', name)
     end
 
     if isPromised then

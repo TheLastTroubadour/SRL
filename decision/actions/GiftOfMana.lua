@@ -1,5 +1,6 @@
 local mq = require 'mq'
 local Target = require 'service.TargetService'
+local SpellUtil = require 'util.SpellUtil'
 
 local GiftOfMana = {}
 GiftOfMana.__index = GiftOfMana
@@ -36,9 +37,10 @@ function GiftOfMana:score(ctx)
     local entry = self.config:get('GiftOfMana')
     if not entry or not entry.spell then return 0 end
 
-    if not mq.TLO.Me.SpellReady(entry.spell)() then return 0 end
+    local spellName = SpellUtil.resolveRank(entry.spell, 'spell')
+    if not mq.TLO.Me.SpellReady(spellName)() then return 0 end
 
-    self.job = entry
+    self.job = { spell = spellName, gem = entry.gem, target = entry.target }
     return 98
 end
 

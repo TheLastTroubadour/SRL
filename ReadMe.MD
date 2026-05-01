@@ -66,6 +66,9 @@ All commands use the unified `/srl <subcommand>` format.
 | `/srl quickburn` | Activate quick burn |
 | `/srl longburn` | Activate long burn |
 | `/srl fullburn` | Activate full burn |
+| `/srl expmode` | Toggle exp mode — continuously uses `Burn.ExpMode` abilities while an assist target exists |
+| `/srl expmode on` | Force exp mode on |
+| `/srl expmode off` | Force exp mode off |
 | `/srl epicburn` | Click epics |
 | `/srl lesson` | Activate Lesson of the Devoted |
 | `/srl intensity` | Activate Intensity of the Resolute |
@@ -85,7 +88,7 @@ All commands use the unified `/srl <subcommand>` format.
 | `/srl addnoslow` | Add current target to no-slow list (skips all `group: slow` debuffs) |
 | `/srl fi <item>` | Find item in bags |
 | `/srl fmi <item>` | Find missing item |
-| `/srl status [threshold]` | Report unspent AAs |
+| `/srl status [threshold]` | Report level, exp%, and unspent AAs (supports include/exclude) |
 | `/srl turnin <item>` | Turn in item to targeted NPC |
 | `/srl say <phrase>` | Say phrase at staggered intervals |
 | `/srl castcombatbuffs` | Force-cast combat buffs on all bots immediately |
@@ -137,6 +140,9 @@ All commands use the unified `/srl <subcommand>` format.
 /srl longburn
 /srl fullburn
 /srl epicburn
+/srl expmode          # toggle
+/srl expmode on       # force on
+/srl expmode off      # force off
 /srl lesson
 /srl intensity
 /srl armor
@@ -154,8 +160,10 @@ All commands use the unified `/srl <subcommand>` format.
 ### Status
 
 ```
-/srl status         # all bots report unspent AAs
-/srl status 25      # only bots with 25+ unspent AAs report
+/srl status                       # all bots report level, exp%, and unspent AAs
+/srl status 25                    # only bots with 25+ unspent AAs report
+/srl status include=BRD           # only bards report
+/srl status 25 exclude=CLR        # everyone except clerics, AA threshold applied
 ```
 
 ---
@@ -271,7 +279,8 @@ The underlying event system uses `/srlevent` to pass commands and key=value payl
 | `Fellowship` | `sender` | Use Fellowship Registration Insignia |
 | `FindItem` | `item`, `sender` | Report item location |
 | `FindMissingItem` | `item`, `sender` | Report if item is missing |
-| `Status` | `threshold`, `sender` | Report unspent AAs |
+| `Status` | `threshold`, `sender` | Report level, exp%, and unspent AAs |
+| `ExpMode` | `state`, `sender` | Toggle exp mode; `state=on` or `state=off` to force |
 | `PlayMelody` | `name`, `sender` | Start melody |
 | `StopMelody` | `sender` | Stop melody |
 | `ReloadConfig` | `sender` | Reload YAML |
@@ -316,9 +325,10 @@ A default file is generated on first run. Key sections:
 | `CrowdControl.Enabled` | `true`/`false` |
 | `CrowdControl.Spells` | Mez spells with gem, priority, and optional `ae: true` for AE mez |
 | `CrowdControl.RecastBuffer` | Seconds before mez expires to recast (default 10) |
-| `Buffs.SelfBuff` | Buffs to keep on yourself |
-| `Buffs.BotBuff` | Buffs to cast on other characters, out of combat only |
+| `Buffs.SelfBuff` | Buffs to keep on yourself (polled via actor bus; `alwaysCheck: true` fires in combat too) |
+| `Buffs.BotBuff` | Buffs to cast on other characters, out of combat only (`alwaysCheck: true` fires in combat) |
 | `Buffs.CombatBuff` | Buffs to cast only during combat |
+| `Buffs.InstantBuff` | Instant AAs/items fired directly each tick — no polling; `combat`/`outOfCombat` flags control when |
 | `Abilities` | Combat abilities/discs/AAs/items to use automatically |
 | `Taunt` | Taunt abilities for tank classes |
 | `Cures` | Cure spells/AAs to use on debuffed group members |
@@ -366,9 +376,12 @@ All buff categories share the same entry format:
 
 ```yaml
 Buffs:
-  SelfBuff:                      # cast on yourself, out of combat only
+  SelfBuff:                      # cast on yourself, polled via actor bus
     - spell: Yaulp VI
       gem: 3
+    - spell: My Long AA Buff
+      type: aa
+      alwaysCheck: true          # poll and recast even during combat
 
   BotBuff:                       # cast on other characters, out of combat only
     - spell: My Group Buff Rk. III
@@ -384,9 +397,22 @@ Buffs:
       gem: 1
       charactersToBuff:
         - MyTank1
+
+  InstantBuff:                   # instant AAs/items fired directly each tick — no actor bus polling
+    - spell: Selo's Sonata
+      type: aa
+      checkFor: Selo's Sonata Effect   # actual buff/song name to check — use when it differs from the AA name
+      combat: true               # fire during combat (default: true)
+      outOfCombat: true          # fire out of combat (default: true)
+    - spell: My Instant Clicky
+      type: item
+      combat: false              # out of combat only
+      outOfCombat: true
 ```
 
-> `alwaysCheck: true` on a BotBuff entry makes it fire in and out of combat.
+> **`SelfBuff` / `BotBuff`** use the actor bus to poll each target for buff presence and duration before casting. `alwaysCheck: true` bypasses the combat gate so these fire in and out of combat.
+>
+> **`InstantBuff`** skips the polling cycle entirely — it checks `Me.Buff()` directly each tick and fires `/alt activate` or `/useitem` immediately when the buff is missing and the ability is ready. Fires even while moving or following (no movement gate). Best for instant bard AAs and short-recast clickies that are safe to spam. Omitting `combat`/`outOfCombat` defaults both to `true`.
 >
 > `buffName` overrides what is checked on the target when the spell name differs from the buff it applies (e.g. `spell: Improved Familiar` lands as `Improved Familiar VII`). Rank suffixes (`Rk. III` etc.) are always stripped automatically — only use `buffName` when the name is genuinely different.
 >
@@ -612,9 +638,16 @@ Burn:
   LongBurn:
     - name: Intensity of the Resolute
       type: aa
+  ExpMode:
+    - name: My Short-Cooldown Disc
+      type: disc
+    - name: My Exp AA
+      type: aa
 ```
 
 > Abilities fire top to bottom. Discs are skipped if one is already active. Epic is always clicked automatically.
+>
+> `ExpMode` is activated continuously by `/srl expmode` while an assist target exists — use short-cooldown abilities here that are safe to spam in exp groups, not the long raid cooldowns from `FullBurn`.
 
 ---
 

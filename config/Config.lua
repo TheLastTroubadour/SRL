@@ -176,8 +176,13 @@ function ConfigService:loadCharacterYaml()
         return
     end
 
-    local charSettings = yaml.load(file:read("*a")) or {}
+    local content = file:read("*a")
     file:close()
+    local ok, result = pcall(yaml.load, content)
+    if not ok then
+        error(string.format('[SRL] YAML error in %s:\n%s', path, tostring(result)))
+    end
+    local charSettings = result or {}
 
     -- Start from global settings, then overlay character settings on top
     self.resolved = {}

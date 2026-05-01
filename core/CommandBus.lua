@@ -80,6 +80,15 @@ function CommandBus:init()
         commandBus:dispatch(command, payload)
     end)
 
+    local function stripItemLink(text)
+        -- EQ item links: \x12 (1 byte) + 91 bytes of hex link data + item name + \x12 (1 byte)
+        if text:byte(1) == 0x12 then
+            local name = text:sub(93, -2)
+            if name ~= '' then return name end
+        end
+        return text
+    end
+
     local function splitItemArgs(args)
         local nameParts, kvArgs = {}, {}
         for _, a in ipairs(args) do
@@ -89,7 +98,7 @@ function CommandBus:init()
                 table.insert(nameParts, a)
             end
         end
-        return table.concat(nameParts, ' '), kvArgs
+        return stripItemLink(table.concat(nameParts, ' ')), kvArgs
     end
 
     -- Simple broadcast helpers
@@ -324,9 +333,16 @@ function CommandBus:init()
 
         -- Status
         elseif subcmd == 'status' then
-            local threshold = args[1]
-            local xtra = buildExtra({ unpack(args, 2) }, { sender=true, threshold=true })
-            local t = (threshold and threshold ~= '') and (' threshold=' .. threshold) or ''
+            local threshold, kvArgs = nil, {}
+            for _, a in ipairs(args) do
+                local k, v = a:match('^([^=]+)=(.+)$')
+                if k == 'threshold' then threshold = v
+                elseif k then table.insert(kvArgs, a)
+                elseif not threshold then threshold = a
+                end
+            end
+            local xtra = buildExtra(kvArgs, { sender=true })
+            local t = threshold and (' threshold=' .. threshold) or ''
             mq.cmdf('/dgae /srlevent Status sender=%s%s%s', me, t, xtra)
 
         -- NPC interaction
@@ -395,6 +411,12 @@ function CommandBus:init()
         elseif subcmd == 'aeoff' then
             mq.cmdf('/dgze /srlevent AEOff sender=%s%s', me, extra)
             mq.cmdf('/srlevent AEOff sender=%s%s', me, extra)
+
+        elseif subcmd == 'expmode' then
+            local state = args[1] and args[1]:lower()
+            local stateArg = (state == 'on' or state == 'off') and (' state=' .. state) or ''
+            mq.cmdf('/dgze /srlevent ExpMode sender=%s%s', me, stateArg)
+            mq.cmdf('/srlevent ExpMode sender=%s%s', me, stateArg)
 
         elseif subcmd == 'rez' then
             local targetId = mq.TLO.Target.ID()

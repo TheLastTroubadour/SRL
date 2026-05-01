@@ -1,6 +1,7 @@
 local Job = require 'model.Job'
 local mq = require 'mq'
 local Target = require 'service.TargetService'
+local SpellUtil = require 'util.SpellUtil'
 local NukeDecision = {}
 NukeDecision.__index = NukeDecision
 
@@ -41,7 +42,7 @@ function NukeDecision:score(ctx)
              or mq.TLO.Me.Song('Gift of Mana')() ~= nil
     if hasGoM then return 0 end
     if ctx.assist.distance and ctx.assist.distance > 200 then return 0 end
-    if ctx.mana < 20 then return 0 end
+    if ctx.mana < 6 then return 0 end
 
     if not ctx.assist.lineOfSight then return 0 end
 
@@ -50,7 +51,7 @@ function NukeDecision:score(ctx)
         local jolt = self:findReadyJolt(ctx.aggro, ctx.assist.Id)
         if jolt then
             self.nuke = jolt
-            return ctx.mana / 100
+            return 80
         end
         return 0
     end
@@ -60,7 +61,7 @@ function NukeDecision:score(ctx)
         local jolt = self:findReadyJolt(ctx.aggro, ctx.assist.Id)
         if jolt then
             self.nuke = jolt
-            return ctx.mana / 100
+            return 80
         end
     end
 
@@ -68,7 +69,7 @@ function NukeDecision:score(ctx)
     local nuke = self:findReady(self.nukeList, ctx.assist.Id)
     if nuke then
         self.nuke = nuke
-        return ctx.mana / 100
+        return 80
     end
 
     return 0
@@ -189,7 +190,8 @@ function NukeDecision:getJobsFromKey(key, jobType)
     if values then
         for _, v in ipairs(values) do
             local entryType = v.type or jobType
-            local job = Job:new(nil, nil, v.spell, entryType, 50, v.gem or 8)
+            local spellName = SpellUtil.resolveRank(v.spell, entryType)
+            local job = Job:new(nil, nil, spellName, entryType, 50, v.gem or 8)
             job.aggroThreshold = v.aggroThreshold
             job.priority       = v.priority or 0
             table.insert(jobList, job)

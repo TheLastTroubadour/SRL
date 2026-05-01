@@ -3,6 +3,7 @@ local TableUtil = require 'util.TableUtil'
 local StringUtil = require 'util.StringUtil'
 local Job = require 'model.Job'
 local State = require 'core.State'
+local SpellUtil = require 'util.SpellUtil'
 local MAX_NEXT_CHECK_MS = 30 * 60 * 1000  -- 30 minutes
 
 local BuffService = {}
@@ -13,9 +14,10 @@ function BuffService:new(bus, scheduler, combatService, castService, config)
 
     self.config = config
     self.policy = {
-        selfBuffs = self:getBuffInformationForKey('Buffs.SelfBuff'),
-        combatBuffs = self:getBuffInformationForKey('Buffs.CombatBuff'),
-        botBuffs = self:getBuffInformationForKey('Buffs.BotBuff')
+        selfBuffs    = self:getBuffInformationForKey('Buffs.SelfBuff'),
+        combatBuffs  = self:getBuffInformationForKey('Buffs.CombatBuff'),
+        botBuffs     = self:getBuffInformationForKey('Buffs.BotBuff'),
+        instantBuffs = self:getInstantBuffPolicy(),
     }
 
     self.scheduler = scheduler
@@ -25,7 +27,8 @@ function BuffService:new(bus, scheduler, combatService, castService, config)
     self.bus = bus
     self.requested = {}     -- target:spell currently polling
     self.cooldowns = {}     -- suppression timer
-    self.nextCheck = {}   -- key → timestamp when next poll allowed
+    self.nextCheck = {}     -- key → timestamp when next poll allowed
+    self.knownBuffs = {}    -- [targetName][buffName] = expiryMs
 
     return self
 end
@@ -119,6 +122,12 @@ function BuffService:update(ctx)
                   or self.combatService:isInCombat()
                   or (State.assist.targetId ~= nil)
 
+    -- Instant buffs: no polling, no movement gate — fire directly when missing and ready
+    self:processInstantBuffs(inCombat)
+
+    if State.follow.active or State.move.active then return end
+    if mq.TLO.Navigation.Active() then return end
+
     -- Combat buffs only in combat
     if inCombat then
         self:processCategory("combatBuffs", true)
@@ -127,7 +136,6 @@ function BuffService:update(ctx)
     -- Self/bot buffs: always process (alwaysCheck entries fire in combat too)
     self:processCategory("selfBuffs", inCombat)
     self:processCategory("botBuffs", inCombat)
-
 end
 
 function BuffService:processCategory(category, inCombat)
@@ -160,14 +168,73 @@ function BuffService:processCategory(category, inCombat)
     end
 end
 
+function BuffService:getInstantBuffPolicy()
+    local values = self.config:get('Buffs.InstantBuff')
+    if not values then return {} end
+    local list = {}
+    for _, v in ipairs(values) do
+        local buffName = v.buffName or v.spell
+        if v.type == 'item' and not v.buffName then
+            local clickySpell = mq.TLO.FindItem('=' .. v.spell).Clicky.Spell.Name()
+            if clickySpell then buffName = clickySpell end
+        end
+        table.insert(list, {
+            name        = v.spell,
+            type        = v.type or 'aa',
+            buffName    = v.checkFor or buffName,
+            combat      = v.combat      == nil and true or v.combat,
+            outOfCombat = v.outOfCombat == nil and true or v.outOfCombat,
+        })
+    end
+    return list
+end
+
+local function hasInstantBuff(buffName)
+    return mq.TLO.Me.Buff(buffName)() or mq.TLO.Me.Song(buffName)()
+end
+
+function BuffService:processInstantBuffs(inCombat)
+    local spells = self.policy.instantBuffs
+    if not spells or #spells == 0 then return end
+    if mq.TLO.Me.Invis() then return end
+    local now = mq.gettime()
+
+    for _, buff in ipairs(spells) do
+        if inCombat     and not buff.combat      then goto continue end
+        if not inCombat and not buff.outOfCombat then goto continue end
+
+        -- Post-cast cooldown: skip until 80% of the spell duration has elapsed
+        if buff._nextCast and now < buff._nextCast then goto continue end
+
+        if hasInstantBuff(buff.buffName) then goto continue end
+
+        if buff.type == 'aa' then
+            if mq.TLO.Me.AltAbilityReady(buff.name)() then
+                mq.cmdf('/alt activate "%s"', buff.name)
+                local duration = (mq.TLO.Me.AltAbility(buff.name).Spell.Duration.TotalSeconds() or 0) * 1000
+                buff._nextCast = now + math.max(duration * 0.8, 30000)
+            end
+        elseif buff.type == 'item' then
+            local item = mq.TLO.FindItem('=' .. buff.name)
+            if item() and (item.TimerReady() or 1) == 0 then
+                mq.cmdf('/useitem "%s"', buff.name)
+                local duration = (item.Clicky.Spell.Duration.TotalSeconds() or 0) * 1000
+                buff._nextCast = now + math.max(duration * 0.8, 30000)
+            end
+        end
+
+        ::continue::
+    end
+end
+
 function BuffService:getBuffInformationForKey(key)
     local values = self.config:get(key)
     local jobList = {}
     if values then
         for _, v in ipairs(values) do
-            local spellName = v.spell
-            local gem = v.gem or 8
             local jobType = v.type or 'buff'
+            local spellName = SpellUtil.resolveRank(v.spell, jobType)
+            local gem = v.gem or 8
             local buffName = v.buffName or spellName
             if jobType == 'item' and not v.buffName then
                 local clickySpell = mq.TLO.FindItem('=' .. spellName).Clicky.Spell.Name()
@@ -250,6 +317,20 @@ function BuffService:handlePollPromise(target, buffEntry, promise)
                 self.nextCheck[k] = now + 10000
                 return
             end
+
+            -- Local confirmation: skip if the buff is already present
+            -- (another bot may have cast it between our request and now)
+            local checkName = buffEntry.buffName or buffEntry.name
+            local alreadyHasBuff = freshSpawn.Buff('=' .. checkName)() ~= nil
+            if not alreadyHasBuff then
+                local baseName = checkName:gsub('%s+Rk%.%s*%a+$', '')
+                alreadyHasBuff = freshSpawn.Buff(baseName)() ~= nil
+            end
+            if alreadyHasBuff then
+                self.nextCheck[k] = now + 10000
+                return
+            end
+
             buffEntry.targetId = freshSpawn.ID()
             buffEntry.key = buffEntry.name .. ':' .. tostring(buffEntry.targetId)
 
@@ -261,51 +342,31 @@ function BuffService:handlePollPromise(target, buffEntry, promise)
         end
 
         ------------------------------------------------
-        -- 2️⃣ Buff exists → check duration
+        -- 2️⃣ Buff exists → schedule next check
         ------------------------------------------------
-        if (reply.data.hasBuff) then
-            local refreshWindow = (mq.TLO.Spell(buffEntry.name).Duration.TotalSeconds() or 0) * .1
+        if reply.data.hasBuff then
             local duration = reply.data.duration or 0
+            local spellDuration = mq.TLO.Spell(buffEntry.name).Duration.TotalSeconds() or 0
+            local refreshWindow = spellDuration * 0.1
 
-            --within 10% of the original cast time
-            if duration <= refreshWindow then
-
-                -- Same combat gating logic
-                if inCombat
-                        and not self.explicitRequests[k]
-                then
-                    self.nextCheck[k] = now + 5000
-                    return
-                end
-
+            if buffEntry.alwaysCheck and duration <= refreshWindow then
+                -- Expiring soon and must stay up — enqueue a refresh now
                 self.cooldowns[k] = now + 3000
-
                 local spellKey = 'spell:' .. (buffEntry.buffName or buffEntry.name)
                 self.cooldowns[spellKey] = now + 3000
 
-                if self.castService:isQueued(buffEntry) then
-                    --Currently queued
-                    return
+                if not self.castService:isQueued(buffEntry) then
+                    local freshSpawn = mq.TLO.Spawn('pc =' .. target)
+                    if freshSpawn() then
+                        buffEntry.targetId = freshSpawn.ID()
+                        buffEntry.key = buffEntry.name .. ':' .. tostring(buffEntry.targetId)
+                        self.castService:enqueue(buffEntry)
+                    end
                 end
-
-                local freshSpawn2 = mq.TLO.Spawn('pc =' .. target)
-                if not freshSpawn2() then
-                    self.nextCheck[k] = now + 10000
-                    return
-                end
-                buffEntry.targetId = freshSpawn2.ID()
-                buffEntry.key = buffEntry.name .. ':' .. tostring(buffEntry.targetId)
-
-                self.castService:enqueue(buffEntry)
-
-                local spellDuration = mq.TLO.Spell(buffEntry.name).Duration.TotalSeconds() or 0
                 self.nextCheck[k] = now + math.max(10000, spellDuration * 0.8 * 1000)
             else
-                ------------------------------------------------
-                -- 3️⃣ Buff healthy → schedule next expiration check
-                ------------------------------------------------
                 local ms = math.min(duration * 0.8 * 1000, MAX_NEXT_CHECK_MS)
-                self.nextCheck[k] = now + ms
+                self.nextCheck[k] = now + math.max(30000, ms)
             end
         end
 
@@ -320,19 +381,89 @@ function BuffService:handlePollPromise(target, buffEntry, promise)
 end
 
 -- Called when any bot broadcasts that they received a buff.
--- Every bot that could cast this spell suppresses its nextCheck so nobody
--- double-casts the same buff on that target.
+-- Updates the nextCheck suppression timer and the local buff cache.
 function BuffService:onBuffReceived(targetName, spellName, duration)
     local k = key(targetName, spellName)
     local now = mq.gettime()
     local ms = math.min(math.max(30000, duration * 0.8 * 1000), MAX_NEXT_CHECK_MS)
     self.nextCheck[k] = now + ms
+
+    if not self.knownBuffs[targetName] then self.knownBuffs[targetName] = {} end
+    local expiryMs = now + (duration * 1000)
+    self.knownBuffs[targetName][spellName] = expiryMs
+    local baseName = spellName:gsub('%s+Rk%.%s*%a+$', '')
+    if baseName ~= spellName then
+        self.knownBuffs[targetName][baseName] = expiryMs
+    end
+end
+
+function BuffService:onBuffRemoved(targetName, spellName)
+    local charBuffs = self.knownBuffs[targetName]
+    if charBuffs then
+        charBuffs[spellName] = nil
+        local baseName = spellName:gsub('%s+Rk%.%s*%a+$', '')
+        if baseName ~= spellName then charBuffs[baseName] = nil end
+    end
+    -- Clear nextCheck so BuffService polls this target/spell immediately
+    local k = key(targetName, spellName)
+    self.nextCheck[k] = nil
+end
+
+function BuffService:hasKnownBuff(targetName, buffName)
+    local charBuffs = self.knownBuffs[targetName]
+    if not charBuffs then return false end
+    local now = mq.gettime()
+    if charBuffs[buffName] and now < charBuffs[buffName] then return true end
+    local baseName = buffName:gsub('%s+Rk%.%s*%a+$', '')
+    if charBuffs[baseName] and now < charBuffs[baseName] then return true end
+    return false
+end
+
+-- Polls own buff window each second.
+-- Broadcasts buff_received for new buffs and buff_removed for dropped ones.
+-- On first tick all current buffs are broadcast, seeding the cache across all bots.
+function BuffService:startWatcher()
+    self.scheduler:spawn(function()
+        local prevBuffs = {}
+        while true do
+            local curr = {}
+            local myName = mq.TLO.Me.Name()
+            for i = 1, 42 do
+                local buff = mq.TLO.Me.Buff(i)
+                if buff() then
+                    local name = buff.Name()
+                    local dur  = buff.Duration.TotalSeconds() or 0
+                    if name then
+                        curr[name] = dur
+                        if not prevBuffs[name] then
+                            self.bus.actor:broadcast('buff_received', {
+                                targetName = myName,
+                                spellName  = name,
+                                duration   = dur,
+                            })
+                        end
+                    end
+                end
+            end
+            for name in pairs(prevBuffs) do
+                if not curr[name] then
+                    self.bus.actor:broadcast('buff_removed', {
+                        targetName = myName,
+                        spellName  = name,
+                    })
+                end
+            end
+            prevBuffs = curr
+            mq.delay(1000)
+        end
+    end)
 end
 
 function BuffService:reset()
     self.cooldowns  = {}
     self.nextCheck  = {}
     self.requested  = {}
+    self.knownBuffs = {}
 end
 
 function BuffService:resetForTarget(targetName)
@@ -346,6 +477,7 @@ function BuffService:resetForTarget(targetName)
     for k in pairs(self.requested) do
         if k:lower():sub(1, #prefix) == prefix then self.requested[k] = nil end
     end
+    self.knownBuffs[targetName] = nil
     -- Add explicit requests so combat doesn't block rebuffing after death/rez
     for _, category in ipairs({'selfBuffs', 'botBuffs', 'combatBuffs'}) do
         local spells = self.policy[category] or {}
@@ -353,6 +485,29 @@ function BuffService:resetForTarget(targetName)
             if (buff.targetName or ''):lower() == targetName:lower() then
                 local spell = buff.spell or buff.name or ''
                 self.explicitRequests[buff.targetName .. ':' .. spell] = true
+            end
+        end
+    end
+end
+
+function BuffService:onSpellBlocked(spellName, targetName, blockingBuffName)
+    local baseName = spellName:gsub('%s+Rk%.%s*%a+$', '')
+    for _, category in ipairs({'selfBuffs', 'botBuffs', 'combatBuffs'}) do
+        for _, buff in ipairs(self.policy[category] or {}) do
+            if (buff.targetName or ''):lower() == targetName:lower() then
+                local buffBase = (buff.name or ''):gsub('%s+Rk%.%s*%a+$', '')
+                if buffBase:lower() == baseName:lower() then
+                    local k = key(buff.targetName, buff.buffName or buff.name)
+                    local now = mq.gettime()
+                    local duration = blockingBuffName
+                        and (mq.TLO.Spell(blockingBuffName).Duration.TotalSeconds() or 0) * 1000
+                        or 0
+                    local cooldown = duration > 0
+                        and math.min(duration * 0.8, MAX_NEXT_CHECK_MS)
+                        or MAX_NEXT_CHECK_MS
+                    self.nextCheck[k] = now + math.max(30000, cooldown)
+                    return
+                end
             end
         end
     end

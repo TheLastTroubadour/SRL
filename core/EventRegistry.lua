@@ -42,6 +42,14 @@ function EventRegistry:init(services)
         if buffService and name then buffService:resetForTarget(name) end
     end)
 
+    -- Higher-rank buff already present: suppress recasting based on the blocking buff's duration
+    mq.event('SRL_SpellBlocked', 'Your #1# spell did not take hold on #2#.#*#', function(line, spellName, targetName)
+        if buffService and spellName and targetName then
+            local blockingBuff = line:match('%(Blocked by (.-)%.%)')
+            buffService:onSpellBlocked(spellName, targetName, blockingBuff)
+        end
+    end)
+
     -- Group / raid invites
     mq.event('GroupInvite', '#1# invites you to join a group.#*#', function(line, inviter)
         if inviteService then inviteService:handleGroupInvite(inviter) end

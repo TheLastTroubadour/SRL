@@ -46,6 +46,7 @@ State.flags = {
     paused                = false,
     isPuller              = false,
     aeEnabled             = false,
+    expMode               = false,
     medDisabled           = false,
     commandDebuffTargetId = nil,
     commandDotTargetId    = nil,

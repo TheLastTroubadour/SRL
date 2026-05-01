@@ -263,7 +263,7 @@ function CommandRegistry:setup(commandBus, rt, config)
 
     commandBus:register('MedOn', function()
         State:setMedMode(true)
-        rt.melodyService:stop()
+        mq.cmd('/stopsong')
         mq.cmd('/sit')
     end)
 
@@ -368,15 +368,10 @@ function CommandRegistry:setup(commandBus, rt, config)
         local itemName = (payload.item or ''):gsub('_', ' ')
         if itemName == '' then return end
         if inventoryDedup('fmi:' .. itemName:lower()) then return end
-        local me    = mq.TLO.Me.Name()
-        local count = totalItemCount(itemName)
-        if count == 0 then
+        local me = mq.TLO.Me.Name()
+        if totalItemCount(itemName) == 0 then
             mq.cmdf('/dgt all [%s] missing %s', me, itemName)
-            return
         end
-        local item      = findItemAnywhere(itemName)
-        local foundName = item() and item.Name() or itemName
-        mq.cmdf('/dgt all [%s] %s x%d', me, foundName, count)
     end)
 
     local SLOT_ALIASES = {
@@ -496,11 +491,13 @@ function CommandRegistry:setup(commandBus, rt, config)
     end)
 
     commandBus:register('Status', function(payload)
-        local me = mq.TLO.Me.Name()
-        local aa = mq.TLO.Me.AAPoints() or 0
+        local me    = mq.TLO.Me.Name()
+        local aa    = mq.TLO.Me.AAPoints() or 0
+        local level = mq.TLO.Me.Level() or 0
+        local exp   = mq.TLO.Me.PctExp() or 0
         local threshold = payload.threshold and tonumber(payload.threshold)
         if threshold and aa < threshold then return end
-        mq.cmdf('/dgt all [%s] Unspent AAs: %d', me, aa)
+        mq.cmdf('/dgt all [%s] Level: %d (%.1f%%) | Unspent AAs: %d', me, level, exp, aa)
     end)
 
     commandBus:register('TellSpell', function(payload)
@@ -789,6 +786,17 @@ function CommandRegistry:setup(commandBus, rt, config)
     commandBus:register('AEOff', function()
         State.flags.aeEnabled = false
         print('[SRL] AE: disabled')
+    end)
+
+    commandBus:register('ExpMode', function(payload)
+        if payload.state == 'on' then
+            State.flags.expMode = true
+        elseif payload.state == 'off' then
+            State.flags.expMode = false
+        else
+            State.flags.expMode = not State.flags.expMode
+        end
+        print(string.format('[SRL] Exp mode: %s', State.flags.expMode and 'enabled' or 'disabled'))
     end)
 
     commandBus:register('BuffIt', function(payload)
