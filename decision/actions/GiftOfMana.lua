@@ -61,6 +61,8 @@ function GiftOfMana:execute(ctx)
 
     local gem = mq.TLO.Me.Gem(self.job.spell)() or self.job.gem
     if not gem then return end
+    mq.cmd('/stick off')
+    mq.cmd('/nav stop')
     mq.cmdf('/cast %s', gem)
 end
 

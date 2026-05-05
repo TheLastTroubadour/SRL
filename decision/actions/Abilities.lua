@@ -44,6 +44,7 @@ function AbilityDecision:score(ctx)
     if ctx.casting and not isBard then return 0 end
 
     if not ctx.assist.Id then return 0 end
+    if not ctx.inCombat then return 0 end
 
     if ctx.assist.distance and ctx.assist.distance > 200 then return 0 end
 
