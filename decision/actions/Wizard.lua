@@ -5,9 +5,10 @@ WizardDecision.__index = WizardDecision
 
 function WizardDecision:new(config)
     local self = setmetatable({}, WizardDecision)
-    self.name    = "WizardDecision"
-    self.config  = config
-    self.pending = nil
+    self.name           = "WizardDecision"
+    self.config         = config
+    self.pending        = nil
+    self.castTimestamps = {}   -- [spellName] = ms timestamp of last cast
     return self
 end
 
@@ -39,6 +40,7 @@ function WizardDecision:execute(ctx)
         local gem = mq.TLO.Me.Gem(self.pending.name)() or self.pending.gem
         if not gem then return end
         mq.cmdf('/cast %s', gem)
+        self.castTimestamps[self.pending.name] = mq.gettime()
     end
 end
 
@@ -46,7 +48,17 @@ function WizardDecision:isReady(entry)
     if entry.type == 'aa' then
         return mq.TLO.Me.AltAbilityReady(entry.name)() == true
     elseif entry.type == 'spell' then
-        return mq.TLO.Me.SpellReady(entry.name)() == true
+        if not mq.TLO.Me.SpellReady(entry.name)() then return false end
+        -- SpellReady only checks the short gem refresh timer, not the spell's long reuse
+        -- timer. Track our own cast time and compare against the spell's recast time.
+        local lastCast = self.castTimestamps[entry.name] or 0
+        if lastCast > 0 then
+            local recastMs = mq.TLO.Spell(entry.name).RecastTime() or 0
+            if recastMs > 0 and (mq.gettime() - lastCast) < recastMs then
+                return false
+            end
+        end
+        return true
     end
     return false
 end

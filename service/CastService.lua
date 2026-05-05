@@ -125,6 +125,12 @@ function CastService:startWorker()
                     goto workerNext
                 end
 
+                -- Don't cast while invisible — would break invis for the group
+                if mq.TLO.Me.Invis() then
+                    mq.delay(50)
+                    goto workerNext
+                end
+
                 local job = table.remove(self.queue, jobIdx)
 
                 self.currentlyInFlight = job

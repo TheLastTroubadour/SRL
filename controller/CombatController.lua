@@ -30,7 +30,6 @@ function CombatController:assist(payload)
     if targetType == 'PC' or targetType == 'Mercenary' then return end
     if targetType == 'NPC' then
         local requireAggressive = self.config:get('AssistSettings.requireAggressive')
-        if requireAggressive == nil then requireAggressive = true end
         if requireAggressive and not target.Aggressive() then return end
     end
 

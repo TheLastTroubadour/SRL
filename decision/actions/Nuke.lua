@@ -13,7 +13,7 @@ function NukeDecision:new(config)
     self.lockoutThreshold = config:get('Jolts.LockoutThreshold') or 100
     self.nuke             = nil
     self.nukeIndex        = 1
-    self.joltList         = self:getJobsFromKey('Jolts', 'nuke')
+    self.joltList         = self:getJobsFromKey('Jolts.Main', 'nuke')
     self:reloadSet('Main')
     return self
 end

@@ -72,9 +72,26 @@ function HoTDecision:score(ctx)
     return 0
 end
 
+-- Returns the lowest direct-heal threshold configured for the given role,
+-- or 0 if no direct heals are configured (meaning no floor applies).
+function HoTDecision:directHealFloor(role)
+    local healSpells = self.config:get('Heals.Spells')
+    if not healSpells then return 0 end
+    local spells = healSpells[role] or healSpells['normal']
+    if not spells or #spells == 0 then return 0 end
+    local floor = math.huge
+    for _, entry in ipairs(spells) do
+        local t = entry.threshold or 100
+        if t < floor then floor = t end
+    end
+    return floor == math.huge and 0 or floor
+end
+
 -- Finds the lowest-HP target that needs a cast for the given config key.
 -- HoTSpells: skip if buff is already present.
 -- PromisedSpells: skip if buff is present; wait `buffer` seconds after it falls off.
+-- Automatically skips targets whose HP is at or below the lowest direct-heal threshold
+-- for their role, so fast heals always win when the target is in critical range.
 function HoTDecision:findBestForKey(configKey, targets, isPromised)
     local spellsByRole = self.config:get(configKey)
     if not spellsByRole then return nil end
@@ -86,13 +103,17 @@ function HoTDecision:findBestForKey(configKey, targets, isPromised)
         local spells = spellsByRole[target.role] or spellsByRole['normal']
         if not spells then goto nextTarget end
 
+        local hp = target.hp or 100
+        local healFloor = self:directHealFloor(target.role)
+        if healFloor > 0 and hp <= healFloor then goto nextTarget end
+
         for _, entry in ipairs(spells) do
             -- Lazy-resolve rank once; stored on the config entry object for reuse
             if not entry._rspell then
                 entry._rspell = SpellUtil.resolveRank(entry.spell, entry.type or 'spell')
             end
-            if (target.hp or 100) > (entry.threshold or 100) then goto nextEntry end
-            if best and (target.hp or 100) >= (best.target.hp or 100) then goto nextEntry end
+            if hp > (entry.threshold or 100) then goto nextEntry end
+            if best and hp >= (best.target.hp or 100) then goto nextEntry end
 
             local buffName = entry.checkBuff or (entry.spell:gsub('%s+Rk%.%s*%w+$', ''))
             local spawn = mq.TLO.Spawn('id ' .. target.id)
@@ -155,6 +176,8 @@ function HoTDecision:execute(ctx)
     if t == 'spell' then
         local gem = mq.TLO.Me.Gem(name)() or entry.gem
         if not gem then return end
+        mq.cmd('/stick off')
+        mq.cmd('/nav stop')
         mq.cmdf('/cast %s', gem)
     elseif t == 'aa' then
         mq.cmdf('/alt activate "%s"', name)

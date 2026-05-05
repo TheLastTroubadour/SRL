@@ -13,6 +13,7 @@ MovementDecision.__index = MovementDecision
 function MovementDecision:new()
     local self = setmetatable({}, MovementDecision)
     self.name            = "MovementDecision"
+    self.safeWhileInvis  = true
     self.lastStickIssued = 0
     self.lastTooFarWarn  = 0
     return self

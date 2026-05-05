@@ -364,6 +364,14 @@ function CommandBus:init()
                 mq.TLO.Target.ID(), phrase:gsub(' ', '_'), me, xtra)
 
         -- Config / admin
+        elseif subcmd == 'respawn' then
+            mq.cmdf('/dgze /srlevent Respawn sender=%s%s', me, extra)
+            mq.cmdf('/srlevent Respawn sender=%s%s', me, extra)
+
+        elseif subcmd == 'rebuff' then
+            broadcast('Rebuff', extra)
+            mq.cmdf('/srlevent Rebuff sender=%s', me)
+
         elseif subcmd == 'reload' then
             broadcast('ReloadConfig', extra)
 

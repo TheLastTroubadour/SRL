@@ -78,6 +78,8 @@ function HealDecision:execute(ctx)
 
     local gem = mq.TLO.Me.Gem(self.job.name)() or self.job.gem
     if not gem then return end
+    mq.cmd('/stick off')
+    mq.cmd('/nav stop')
     mq.cmdf('/cast %s', gem)
     local suppressMs = 8000
     self.groupHealLock = mq.gettime() + suppressMs
@@ -98,13 +100,19 @@ function HealDecision:checkGroupHeal(targets)
     local groupSpell   = self.config:get("Heals.GroupSpell")
     local threshold    = (groupSpell and groupSpell.threshold) or self.config:get("Heals.GroupThreshold")    or 65
     local minInjured   = (groupSpell and groupSpell.minInjured) or self.config:get("Heals.GroupHealMinInjured") or 4
+    local minInjuredWithTank = (groupSpell and groupSpell.minInjuredWithTank) or math.max(1, minInjured - 1)
     local groupOnlyCfg = self.config:get("Heals.GroupHealGroupOnly")
     local groupOnly    = groupOnlyCfg == nil or groupOnlyCfg == true
 
     if not (groupSpell and groupSpell.spell) then return false end
 
+    local tanks        = self.config:get("Heals.Tanks") or {}
+    local tankSet      = {}
+    for _, n in ipairs(tanks) do tankSet[n] = true end
+
     local aeRange        = mq.TLO.Spell(groupSpell.spell).AERange() or 100
     local injuredInRange = 0
+    local tankInjured    = false
 
     if groupOnly then
         -- Only count EQ group members + self as injured
@@ -115,10 +123,11 @@ function HealDecision:checkGroupHeal(targets)
         for i = 1, gCount do
             local m = mq.TLO.Group.Member(i)
             if m() and not m.Dead() then
-                local hp  = m.PctHPs()
+                local hp   = m.PctHPs()
                 local dist = m.Distance() or 999
                 if hp and hp <= threshold and dist <= aeRange then
                     injuredInRange = injuredInRange + 1
+                    if tankSet[m.CleanName()] then tankInjured = true end
                 end
             end
         end
@@ -128,12 +137,14 @@ function HealDecision:checkGroupHeal(targets)
                 local spawn = mq.TLO.Spawn('id ' .. tostring(t.id))
                 if spawn() and (spawn.Distance() or 999) <= aeRange then
                     injuredInRange = injuredInRange + 1
+                    if tankSet[t.name] then tankInjured = true end
                 end
             end
         end
     end
 
-    if injuredInRange >= minInjured then
+    local required = tankInjured and minInjuredWithTank or minInjured
+    if injuredInRange >= required then
         self.job = Job:new(
                 mq.TLO.Me.ID(),
                 mq.TLO.Me.Name(),

@@ -7,13 +7,17 @@ AssistDecision.__index = AssistDecision
 
 function AssistDecision:new()
     local self = setmetatable({}, AssistDecision)
-    self.name = "AssistDecision"
+    self.name           = "AssistDecision"
+    self.safeWhileInvis = true  -- attacking breaks invis anyway; let the bot engage when called
+    self.lastEngagedId  = nil   -- target ID we last issued /stick + /attack on for
     return self
 end
 
 function AssistDecision:score(ctx)
 
     if not ctx.assist.Id then
+        self.lastEngagedId = nil
+        if ctx.inCombat then mq.cmd('/attack off') end
         return 0
     end
 
@@ -30,24 +34,19 @@ function AssistDecision:score(ctx)
         return 0
     end
 
-    if not ctx.myCurrentTargetId then
-        return 90
-    end
-
-    if tonumber(ctx.assist.Id) ~= tonumber(ctx.myCurrentTargetId) then
-        return 90
-    end
-
     if ctx.assist.dead then
         mq.cmd('/attack off')
+        self.lastEngagedId = nil
         return 0
     end
 
-    if not ctx.inCombat then
+    -- Wrong target — need to retarget and re-engage
+    if not ctx.myCurrentTargetId or tonumber(ctx.assist.Id) ~= tonumber(ctx.myCurrentTargetId) then
         return 90
     end
 
-    if not mq.TLO.Stick.Active() then
+    -- New target, stick fell off, or attack dropped — need to engage
+    if not mq.TLO.Stick.Active() or tostring(ctx.assist.Id) ~= tostring(self.lastEngagedId) or not ctx.inCombat then
         return 90
     end
 
@@ -61,6 +60,7 @@ function AssistDecision:execute(ctx)
     mq.cmdf('/stick %s %s moveback uw', ctx.assist.stickPoint, ctx.assist.stickDistance)
     mq.delay(50)
     mq.cmd('/attack on')
+    self.lastEngagedId = tostring(ctx.assist.Id)
 end
 
 return AssistDecision

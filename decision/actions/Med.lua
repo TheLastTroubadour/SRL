@@ -4,6 +4,7 @@ local State = require 'core.State'
 local Med = {}
 Med.__index = Med
 Med.name = 'Med'
+Med.safeWhileInvis = true
 
 function Med:new()
     return setmetatable({}, Med)

@@ -109,6 +109,8 @@ function RezDecision:execute(ctx)
     if spell.type == 'spell' then
         local gem = mq.TLO.Me.Gem(spell.name)() or spell.gem
         if not gem then return end
+        mq.cmd('/stick off')
+        mq.cmd('/nav stop')
         local castTime = (mq.TLO.Spell(spell.name).CastTime.TotalSeconds() or 3) * 1000 + 1500
         mq.cmdf('/cast %s', gem)
         mq.delay(1000, function() return mq.TLO.Me.Casting() ~= nil end)

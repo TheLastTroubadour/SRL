@@ -78,6 +78,17 @@ function CommandRegistry:setup(commandBus, rt, config)
         config:reload()
     end)
 
+    commandBus:register('Rebuff', function()
+        rt.buffService:reset()
+    end)
+
+    commandBus:register('Respawn', function()
+        local wnd = mq.TLO.Window('RespawnWnd')
+        if wnd() and wnd.Open() then
+            mq.cmd('/notify RespawnWnd RW_SelectButton leftmouseup')
+        end
+    end)
+
     commandBus:register('ToggleDebug', function()
         rt.debugState.visible = not rt.debugState.visible
     end)

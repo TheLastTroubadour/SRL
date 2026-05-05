@@ -18,6 +18,10 @@ function Engine:evaluate(ctx)
 
     for _, module in ipairs(self.modules) do
 
+        if ctx.invis and not module.safeWhileInvis then
+            goto nextModule
+        end
+
         local score = module:score(ctx)
 
         if score > 0 then
@@ -36,6 +40,8 @@ function Engine:evaluate(ctx)
             bestScore = score
             best = module
         end
+
+        ::nextModule::
     end
 
     if bestScore < .1 then
