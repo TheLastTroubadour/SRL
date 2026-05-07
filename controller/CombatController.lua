@@ -25,12 +25,13 @@ function CombatController:assist(payload)
     if sender.Distance() > maxDist then return end
 
     local target = mq.TLO.Spawn('id ' .. tostring(payload.id))
-    if not target() then return end
-    local targetType = target.Type()
-    if targetType == 'PC' or targetType == 'Mercenary' then return end
-    if targetType == 'NPC' then
-        local requireAggressive = self.config:get('AssistSettings.requireAggressive')
-        if requireAggressive and not target.Aggressive() then return end
+    if target() then
+        local targetType = target.Type()
+        if targetType == 'PC' or targetType == 'Mercenary' then return end
+        if targetType == 'NPC' then
+            local requireAggressive = self.config:get('AssistSettings.requireAggressive')
+            if requireAggressive and not target.Aggressive() then return end
+        end
     end
 
     State:updateAssistState(payload)

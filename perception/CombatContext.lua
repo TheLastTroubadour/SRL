@@ -111,12 +111,21 @@ function Context:build(state)
             ctx.assist.HP = spawn.PctHPs()
             ctx.assist.lineOfSight = spawn.LineOfSight()
             ctx.assist.dead = false
-        else
+        elseif spawn() and spawn.Dead() then
+            -- Confirmed dead — clear everything
             State.assist.targetId = nil
             ctx.assist.HP = nil
             ctx.assist.distance = nil
             ctx.assist.Id = nil
             ctx.assist.dead = true
+        else
+            -- Spawn not yet visible to this client — preserve State for retry next tick,
+            -- nil ctx.Id so decisions idle rather than acting on an invisible mob
+            ctx.assist.Id = nil
+            ctx.assist.HP = nil
+            ctx.assist.distance = nil
+            ctx.assist.lineOfSight = nil
+            ctx.assist.dead = false
         end
     end
 

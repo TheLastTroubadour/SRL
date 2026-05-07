@@ -7,17 +7,24 @@ AssistDecision.__index = AssistDecision
 
 function AssistDecision:new()
     local self = setmetatable({}, AssistDecision)
-    self.name           = "AssistDecision"
-    self.safeWhileInvis = true  -- attacking breaks invis anyway; let the bot engage when called
-    self.lastEngagedId  = nil   -- target ID we last issued /stick + /attack on for
+    self.name            = "AssistDecision"
+    self.safeWhileInvis  = true  -- attacking breaks invis anyway; let the bot engage when called
+    self.lastEngagedId   = nil   -- target ID we last issued /stick + /attack on for
+    self.engagedInCombat = false -- true once the mob confirmed fighting back after engage
     return self
 end
 
 function AssistDecision:score(ctx)
 
     if not ctx.assist.Id then
-        self.lastEngagedId = nil
-        if ctx.inCombat then mq.cmd('/attack off') end
+        if self.lastEngagedId then
+            local lastSpawn = mq.TLO.Spawn('id ' .. tostring(self.lastEngagedId))
+            if lastSpawn() and lastSpawn.Dead() then
+                mq.cmd('/attack off')
+            end
+        end
+        self.lastEngagedId   = nil
+        self.engagedInCombat = false
         return 0
     end
 
@@ -45,8 +52,15 @@ function AssistDecision:score(ctx)
         return 90
     end
 
-    -- New target, stick fell off, or attack dropped — need to engage
-    if not mq.TLO.Stick.Active() or tostring(ctx.assist.Id) ~= tostring(self.lastEngagedId) or not ctx.inCombat then
+    -- New target or stick fell off — need to engage
+    if not mq.TLO.Stick.Active() or tostring(ctx.assist.Id) ~= tostring(self.lastEngagedId) then
+        return 90
+    end
+
+    -- Track whether this mob has fought back; re-engage if combat drops after it was established
+    if ctx.inCombat then
+        self.engagedInCombat = true
+    elseif self.engagedInCombat then
         return 90
     end
 
@@ -60,7 +74,8 @@ function AssistDecision:execute(ctx)
     mq.cmdf('/stick %s %s moveback uw', ctx.assist.stickPoint, ctx.assist.stickDistance)
     mq.delay(50)
     mq.cmd('/attack on')
-    self.lastEngagedId = tostring(ctx.assist.Id)
+    self.lastEngagedId   = tostring(ctx.assist.Id)
+    self.engagedInCombat = false
 end
 
 return AssistDecision
