@@ -1,6 +1,7 @@
-local mq    = require 'mq'
-local State = require 'core.State'
-local Target = require 'service.TargetService'
+local mq      = require 'mq'
+local State   = require 'core.State'
+local Target  = require 'service.TargetService'
+local MoveUtil = require 'util.MoveUtil'
 
 local FOLLOW_DIST_THRESHOLD = 15   -- yards before we re-issue nav
 local FOLLOW_RECHECK_MS     = 250  -- don't re-issue nav more than once per 250ms
@@ -27,6 +28,7 @@ function MovementDecision:score(ctx)
 
     -- Normal out-of-combat follow
     if ctx.inCombat then return 0 end
+    if ctx.casting or State.flags.castInFlight then return 0 end
     if not State.follow.active or not State.follow.followId then return 0 end
 
     local now = mq.gettime()
@@ -51,7 +53,12 @@ function MovementDecision:score(ctx)
     end
 
     if dist > FOLLOW_DIST_THRESHOLD then
-        return 10
+        -- Only re-issue if movement isn't already handling it
+        if State.follow.mode == 'nav' then
+            if not mq.TLO.Navigation.Active() then return 10 end
+        else
+            if not mq.TLO.Stick.Active() then return 10 end
+        end
     end
 
     return 0
@@ -77,10 +84,11 @@ function MovementDecision:execute(ctx)
     -- Normal follow: re-issue movement on follow target
     if State.follow.active and State.follow.followId then
         if State.follow.mode == 'nav' then
-            mq.cmdf('/nav id %s', State.follow.followId)
+            MoveUtil.navOrStick(State.follow.followId)
         else
             Target:getTargetById(State.follow.followId)
-            mq.cmd('/stick 5')
+            local uw = mq.TLO.Me.FeetWet() and ' uw' or ''
+            mq.cmdf('/stick 5 loose%s', uw)
         end
         self.lastStickIssued = mq.gettime()
     end

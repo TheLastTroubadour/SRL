@@ -64,6 +64,9 @@ function ResourceDecision:score(ctx)
 
     if self.active and full then
         self.active = false
+        if ctx.myClass == 'BRD' and self.melodyService then
+            self.melodyService:resume()
+        end
         return 0
     end
 
@@ -82,7 +85,7 @@ end
 function ResourceDecision:execute(ctx)
 
     if ctx.myClass == 'BRD' and self.melodyService then
-        mq.cmd('/stopsong')
+        self.melodyService:suspend()
     end
 
     if not mq.TLO.Me.Sitting() then

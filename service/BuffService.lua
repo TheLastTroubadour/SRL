@@ -413,9 +413,25 @@ function BuffService:hasKnownBuff(targetName, buffName)
     local charBuffs = self.knownBuffs[targetName]
     if not charBuffs then return false end
     local now = mq.gettime()
+
     if charBuffs[buffName] and now < charBuffs[buffName] then return true end
+
     local baseName = buffName:gsub('%s+Rk%.%s*%a+$', '')
-    if charBuffs[baseName] and now < charBuffs[baseName] then return true end
+    local jobRank  = StringUtil.parseRank(buffName)
+
+    if jobRank == 0 then
+        -- Unranked spell: base-name match is sufficient
+        if charBuffs[baseName] and now < charBuffs[baseName] then return true end
+        return false
+    end
+
+    -- Ranked spell: find a cached entry for this base with rank >= jobRank
+    for k, expiry in pairs(charBuffs) do
+        if now < expiry and StringUtil.parseRank(k) >= jobRank then
+            local kBase = k:gsub('%s+Rk%.%s*%a+$', '')
+            if kBase:lower() == baseName:lower() then return true end
+        end
+    end
     return false
 end
 

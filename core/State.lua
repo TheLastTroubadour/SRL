@@ -50,6 +50,7 @@ State.flags = {
     medDisabled           = false,
     commandDebuffTargetId = nil,
     commandDotTargetId    = nil,
+    castInFlight          = false,
 }
 
 State.caster = {

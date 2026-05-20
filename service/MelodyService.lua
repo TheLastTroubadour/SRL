@@ -49,7 +49,27 @@ end
 function MelodyService:stop()
     self.active      = nil
     self.interrupted = false
+    self.suspended   = nil
     mq.cmd('/stopsong')
+end
+
+-- Pause melody so it can be resumed later (e.g. during med). Remembers what was playing.
+function MelodyService:suspend()
+    if self.active then
+        self.suspended = self.active
+    end
+    self.active      = nil
+    self.interrupted = false
+    mq.cmd('/stopsong')
+end
+
+-- Resume a previously suspended melody. No-op if nothing was suspended.
+function MelodyService:resume()
+    if self.suspended then
+        local toPlay   = self.suspended
+        self.suspended = nil
+        self:play(toPlay)
+    end
 end
 
 -- Call each main loop tick. Detects stun/fear interrupts and re-issues the

@@ -1,7 +1,8 @@
-local mq    = require 'mq'
-local State = require 'core.State'
-local Job   = require 'model.Job'
-local Target = require 'service.TargetService'
+local mq      = require 'mq'
+local State   = require 'core.State'
+local Job     = require 'model.Job'
+local Target  = require 'service.TargetService'
+local MoveUtil = require 'util.MoveUtil'
 
 local CommandRegistry = {}
 
@@ -50,7 +51,7 @@ function CommandRegistry:setup(commandBus, rt, config)
         if spawn.Distance() > maxDist then return end
         mq.cmd('/stick off')
         mq.cmd('/nav stop')
-        mq.cmdf('/nav id %s', spawn.ID())
+        MoveUtil.navOrStick(spawn.ID())
         State:setFollow({ id = spawn.ID(), sender = sender, mode = 'nav' })
     end)
 
@@ -274,7 +275,7 @@ function CommandRegistry:setup(commandBus, rt, config)
 
     commandBus:register('MedOn', function()
         State:setMedMode(true)
-        mq.cmd('/stopsong')
+        if rt.melodyService then rt.melodyService:suspend() end
         mq.cmd('/sit')
     end)
 
@@ -283,6 +284,7 @@ function CommandRegistry:setup(commandBus, rt, config)
         if not (State.flags.isPuller and mq.TLO.Me.Feigning()) then
             mq.cmd('/stand')
         end
+        if rt.melodyService then rt.melodyService:resume() end
     end)
 
     commandBus:register('ResourceOff', function()
@@ -498,7 +500,7 @@ function CommandRegistry:setup(commandBus, rt, config)
         if not mq.TLO.Spawn('id ' .. targetId)() then return end
         mq.cmd('/stick off')
         mq.cmd('/nav stop')
-        mq.cmdf('/nav id %s', targetId)
+        MoveUtil.navOrStick(targetId)
     end)
 
     commandBus:register('Status', function(payload)

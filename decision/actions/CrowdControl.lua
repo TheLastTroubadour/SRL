@@ -234,13 +234,17 @@ end
 -- the first MaxTankedMobs mobs (left for tanks to handle).
 function CCDecision:getUnmezzedAdds(ctx)
     local maxTanked = self.maxTankedMobsOverride or self.config:get('CrowdControl.MaxTankedMobs') or 1
+    local now = mq.gettime()
     local allAdds = {}
     local slots = mq.TLO.Me.XTargetSlots()
     for i = 1, slots do
         local xt = mq.TLO.Me.XTarget(i)
         if xt() and xt.Type() == "NPC" and not xt.Dead() and xt.Aggressive() then
             local id = xt.ID()
-            if id ~= tonumber(ctx.assist.Id) and not self.mezzed[id] and not self.immune[id] then
+            local mezExpired = self.mezzed[id] and now >= self.mezzed[id]
+            if id ~= tonumber(ctx.assist.Id)
+                    and (not self.mezzed[id] or mezExpired)
+                    and not self.immune[id] then
                 local spawnName = mq.TLO.Spawn('id ' .. id).CleanName()
                 if spawnName and self.immuneNames[spawnName:lower()] then
                     self.immune[id] = true  -- cache by id to skip name lookup next tick

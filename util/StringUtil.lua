@@ -35,4 +35,12 @@ end
 function stringutil_export.printGlobalVariables()
 
 end
+-- Returns the numeric rank from a spell name (e.g. "Spell Rk. III" → 3), or 0 if unranked.
+function stringutil_export.parseRank(name)
+    local roman = name and name:match('%s+Rk%.%s*(%a+)$')
+    if not roman then return 0 end
+    local map = { I=1, II=2, III=3, IV=4, V=5, VI=6, VII=7, VIII=8, IX=9, X=10 }
+    return map[roman] or 0
+end
+
 return stringutil_export

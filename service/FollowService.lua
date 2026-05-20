@@ -23,7 +23,8 @@ function FollowService:follow(followId)
     mq.cmd("/stick off")
     mq.cmd('/nav stop')
     TargetService:getTargetById(followId)
-    mq.cmd("/stick 5 uw")
+    local uw = mq.TLO.Me.FeetWet() and ' uw' or ''
+    mq.cmdf('/stick 5 loose%s', uw)
     Logging.Debug("Movement.follow End")
     State:updateLastActivity()
 end

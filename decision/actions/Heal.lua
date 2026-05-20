@@ -15,6 +15,7 @@ function HealDecision:new(config)
     self.job = nil
     self.groupHealPending = false
     self.bus = nil
+    self.healCooldown = {}
 
     return self
 end
@@ -52,6 +53,9 @@ function HealDecision:score(ctx)
         if heal then
             local spell = mq.TLO.Spell(heal.spell)
             local spellManaCost = spell.Mana() or 0
+            local spellRange = tonumber(spell.Range()) or 200
+            local healSpawn = mq.TLO.Spawn('id ' .. tostring(bestTarget.id))
+            if healSpawn() and (tonumber(healSpawn.Distance()) or 0) > spellRange then return 0 end
             if ctx.currentMana > spellManaCost and mq.TLO.Me.SpellReady(heal.spell)() then
                 self.job = Job:new(
                         bestTarget.id,
@@ -61,6 +65,7 @@ function HealDecision:score(ctx)
                         heal.priority,
                         heal.gem
                 )
+                self.job.targetRole = bestTarget.role
                 return 105
             end
         end
@@ -81,6 +86,13 @@ function HealDecision:execute(ctx)
     mq.cmd('/stick off')
     mq.cmd('/nav stop')
     mq.cmdf('/cast %s', gem)
+
+    -- Suppress non-tank targets until the heal lands (cast time + 2s travel buffer)
+    if self.job.targetRole ~= 'tank' then
+        local castMs = (mq.TLO.Spell(self.job.name).CastTime.TotalSeconds() or 0) * 1000
+        self.healCooldown[self.job.targetId] = mq.gettime() + castMs + 2000
+    end
+
     local suppressMs = 8000
     self.groupHealLock = mq.gettime() + suppressMs
     if self.groupHealPending and self.bus then
@@ -227,10 +239,16 @@ function HealDecision:selectBestTarget(targets)
 
     local best = nil
     local bestScore = 0
+    local now = mq.gettime()
 
     for _,t in ipairs(targets) do
 
             if not t.hp then goto continue end
+
+            -- Non-tanks suppressed while a heal is still in-flight
+            if t.role ~= 'tank' and self.healCooldown[t.id] and now < self.healCooldown[t.id] then
+                goto continue
+            end
 
             local weight = 1
 

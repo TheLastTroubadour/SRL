@@ -55,18 +55,31 @@ function HoTDecision:score(ctx)
     if not targets or #targets == 0 then return 0 end
 
     -- HoT scores 92, Promised scores 91 — HoT wins when both are available
+    local function canReach(id, spellName)
+        local spawn = mq.TLO.Spawn('id ' .. tostring(id))
+        if not spawn() then return true end
+        local range = tonumber(mq.TLO.Spell(spellName).Range()) or 200
+        return (tonumber(spawn.Distance()) or 0) <= range
+    end
+
     local hotBest = self:findBestForKey('Heals.HoTSpells', targets, false)
     if hotBest then
-        self.pendingTarget = hotBest.target
-        self.pendingSpell  = hotBest.spell
-        return 92
+        local spellName = hotBest.spell._rspell or hotBest.spell.spell
+        if canReach(hotBest.target.id, spellName) then
+            self.pendingTarget = hotBest.target
+            self.pendingSpell  = hotBest.spell
+            return 92
+        end
     end
 
     local promisedBest = self:findBestForKey('Heals.PromisedSpells', targets, true)
     if promisedBest then
-        self.pendingTarget = promisedBest.target
-        self.pendingSpell  = promisedBest.spell
-        return 91
+        local spellName = promisedBest.spell._rspell or promisedBest.spell.spell
+        if canReach(promisedBest.target.id, spellName) then
+            self.pendingTarget = promisedBest.target
+            self.pendingSpell  = promisedBest.spell
+            return 91
+        end
     end
 
     return 0

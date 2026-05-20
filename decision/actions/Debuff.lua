@@ -102,7 +102,7 @@ function DebuffDecision:score(ctx)
             if not ctx.assist.lineOfSight then return 0 end
             if #ctx.self.debuff.onAssistSpells > 0 then
                 if self:findDebuff(ctx.self.debuff.onAssistSpells, ctx.assist.Id) then
-                    return self.pendingDebuff.priority and 115 or 80
+                    return self.pendingDebuff.priority and 115 or 82
                 end
             end
         end
@@ -119,7 +119,7 @@ function DebuffDecision:score(ctx)
                     and xt.ID() ~= tonumber(ctx.assist.Id)
                     and xt.LineOfSight() then
                 if self:findDebuff(ctx.self.debuff.xTarSpells, xt.ID()) then
-                    return self.pendingDebuff.priority and 115 or 80
+                    return self.pendingDebuff.priority and 115 or 82
                 end
             end
         end

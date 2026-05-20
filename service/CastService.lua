@@ -3,6 +3,7 @@ local TableUtil = require 'util.TableUtil'
 local Logging = require 'core.Write'
 local Target = require 'service.TargetService'
 local State = require 'core.State'
+local StringUtil = require 'util.StringUtil'
 
 local CastService = {}
 CastService.__index = CastService
@@ -134,6 +135,7 @@ function CastService:startWorker()
                 local job = table.remove(self.queue, jobIdx)
 
                 self.currentlyInFlight = job
+                State.flags.castInFlight = true
                 local result = self:performCast(job)
                 if result == "NOT_READY" and (job.type == 'disc' or job.type == 'aa') then
                     -- Burn job not ready yet — put it back so it fires when it comes off cooldown.
@@ -159,12 +161,14 @@ function CastService:startWorker()
                     self.queuedKeys[job.name] = nil
                 end
                 self.currentlyInFlight = nil
+                State.flags.castInFlight = false
             end
             ::workerNext::
             end) -- end pcall
             if not ok then
                 print("CastService worker error:", err)
                 self.currentlyInFlight = nil
+                State.flags.castInFlight = false
             end
         end
     end)
@@ -278,14 +282,32 @@ function CastService:castItem(job)
 end
 
 function CastService:castDisc(job)
-    if mq.TLO.Me.CombatAbilityReady(job.name)() then
-        mq.cmdf('/disc %s', job.name)
-        local castTime = (mq.TLO.Spell(job.name).CastTime.TotalSeconds() or 0) * 1000 + 500
-        if castTime > 500 then
-            mq.delay(castTime, function() return not mq.TLO.Me.Casting() end)
+    local baseName = job.name:gsub('%s+Rk%.%s*%a+$', '')
+
+    -- Already active: this exact disc is running, no need to re-cast
+    local activeDisc = mq.TLO.Me.ActiveDisc()
+    if activeDisc and activeDisc ~= '' then
+        local activeBase = activeDisc:gsub('%s+Rk%.%s*%a+$', '')
+        if activeBase == baseName then
+            return "NOT_READY"
         end
-    else
+    end
+
+    if not mq.TLO.Me.CombatAbilityReady(job.name)() then
         return "NOT_READY"
+    end
+
+    mq.cmdf('/disc %s', job.name)
+    -- Brief wait then verify the reuse timer was consumed.
+    -- If still ready, a different active disc's mutex blocked it silently.
+    mq.delay(250)
+    if mq.TLO.Me.CombatAbilityReady(job.name)() then
+        return "NOT_READY"
+    end
+
+    local castTime = (mq.TLO.Spell(job.name).CastTime.TotalSeconds() or 0) * 1000
+    if castTime > 250 then
+        mq.delay(castTime - 250, function() return not mq.TLO.Me.Casting() end)
     end
 end
 
@@ -308,16 +330,23 @@ function CastService:castSpell(job)
 end
 
 function CastService:checkIfHasBuff(job)
+    local checkName = job.buffName or job.name
     -- Check distributed cache first — populated by each bot broadcasting its own buff changes
-    if self.buffService and self.buffService:hasKnownBuff(job.targetName, job.buffName or job.name) then
+    if self.buffService and self.buffService:hasKnownBuff(job.targetName, checkName) then
         return true
     end
     -- Fall back to target buff window, only reliable when already targeting this character
     if mq.TLO.Target.ID() == job.targetId then
-        local checkName = job.buffName or job.name
         if mq.TLO.Target.Buff('=' .. checkName)() then return true end
         local baseName = checkName:gsub('%s+Rk%.%s*%a+$', '')
-        if mq.TLO.Target.Buff(baseName)() then return true end
+        local jobRank  = StringUtil.parseRank(checkName)
+        local existing = mq.TLO.Target.Buff(baseName)
+        if existing() then
+            -- Only treat as "already buffed" if existing rank is equal or higher
+            if jobRank == 0 or StringUtil.parseRank(existing.Name() or '') >= jobRank then
+                return true
+            end
+        end
     end
     return false
 end
