@@ -215,6 +215,14 @@ function CommandBus:init()
             mq.cmdf('/dgze /srlevent ResourceOff sender=%s%s', me, extra)
             mq.cmdf('/srlevent ResourceOff sender=%s%s', me, extra)
 
+        elseif subcmd == 'buffon' then
+            mq.cmdf('/dgze /srlevent BuffOn sender=%s%s', me, extra)
+            mq.cmdf('/srlevent BuffOn sender=%s%s', me, extra)
+
+        elseif subcmd == 'buffoff' then
+            mq.cmdf('/dgze /srlevent BuffOff sender=%s%s', me, extra)
+            mq.cmdf('/srlevent BuffOff sender=%s%s', me, extra)
+
         elseif subcmd == 'moveon' then
             local seconds = args[1] or '60'
             local xtra = buildExtra({ unpack(args, 2) }, { sender=true, seconds=true })

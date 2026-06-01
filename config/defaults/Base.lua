@@ -12,9 +12,9 @@ return {
     },
     Aura = {
         CastAura = false,
-        Aura = {
-
-        }
+        spell    = '',
+        type     = 'spell',
+        gem      = nil
     },
     Buffs = {
         InstantBuff = {

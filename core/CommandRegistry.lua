@@ -3,6 +3,7 @@ local State   = require 'core.State'
 local Job     = require 'model.Job'
 local Target  = require 'service.TargetService'
 local MoveUtil = require 'util.MoveUtil'
+local SpellUtil = require 'util.SpellUtil'
 
 local CommandRegistry = {}
 
@@ -292,6 +293,16 @@ function CommandRegistry:setup(commandBus, rt, config)
         print('[SRL] Resource regen disabled')
     end)
 
+    commandBus:register('BuffOn', function()
+        State.flags.buffDisabled = false
+        print('[SRL] Buffing enabled')
+    end)
+
+    commandBus:register('BuffOff', function()
+        State.flags.buffDisabled = true
+        print('[SRL] Buffing disabled')
+    end)
+
     commandBus:register('ResourceOn', function()
         State.flags.medDisabled = false
         print('[SRL] Resource regen enabled')
@@ -513,19 +524,26 @@ function CommandRegistry:setup(commandBus, rt, config)
         mq.cmdf('/dgt all [%s] Level: %d (%.1f%%) | Unspent AAs: %d', me, level, exp, aa)
     end)
 
+    local tellSpellAnnounceCooldown = {}
     commandBus:register('TellSpell', function(payload)
         local targetName = payload.trigger and payload.target
         local trigger    = payload.trigger
         if not targetName or not trigger then return end
 
         -- Only the bot that received the tell sends the acknowledgment
+        -- Dedup: /dgae sends to self so this handler fires twice on the originating bot
         if payload.sender == mq.TLO.Me.Name() then
             if not hasMana() then
                 mq.cmdf('/tell %s Not enough mana, try again later.', targetName)
                 return
             end
-            mq.cmdf('/dgt all [SRL] Casting %s on %s', trigger, targetName)
-            mq.cmdf('/tell %s %s incoming!', targetName, trigger)
+            local now = mq.gettime()
+            local key = 'tellspell:' .. targetName:lower() .. ':' .. trigger:lower()
+            if not tellSpellAnnounceCooldown[key] or now >= tellSpellAnnounceCooldown[key] then
+                tellSpellAnnounceCooldown[key] = now + 3000
+                mq.cmdf('/dgt all [SRL] Casting %s on %s', trigger, targetName)
+                mq.cmdf('/tell %s %s incoming!', targetName, trigger)
+            end
         end
 
         -- Resolve trigger → spell name(s) from global aliases (case-insensitive key match)
@@ -550,7 +568,8 @@ function CommandRegistry:setup(commandBus, rt, config)
         for _, spellName in ipairs(resolved) do
             for _, entry in ipairs(mySpells) do
                 if entry.spell == spellName then
-                    local job = Job:new(spawn.ID(), targetName, entry.spell,
+                    local resolvedSpell = SpellUtil.resolveRank(entry.spell, entry.type or 'spell')
+                    local job = Job:new(spawn.ID(), targetName, resolvedSpell,
                         entry.type or 'spell', 0, entry.gem or 8)
                     job.force = true
                     rt.castService:enqueue(job)
@@ -697,7 +716,8 @@ function CommandRegistry:setup(commandBus, rt, config)
         local targetId = spawn.ID()
         for _, entry in ipairs(spells) do
             if entry.spell then
-                local job = Job:new(targetId, targetName, entry.spell,
+                local resolvedSpell = SpellUtil.resolveRank(entry.spell, entry.type or 'spell')
+                local job = Job:new(targetId, targetName, resolvedSpell,
                     entry.type or 'buff', 0, entry.gem or 8)
                 job.force = true
                 rt.castService:enqueue(job)
@@ -839,10 +859,11 @@ function CommandRegistry:setup(commandBus, rt, config)
 
                 local buff = mq.TLO.Target.Buff(buffName)
                 if not buff() then
-                    local job = Job:new(tid, targetName, entry.spell, entry.type or 'spell', 0, entry.gem or 8)
+                    local resolvedSpell = SpellUtil.resolveRank(entry.spell, entry.type or 'spell')
+                    local job = Job:new(tid, targetName, resolvedSpell, entry.type or 'spell', 0, entry.gem or 8)
                     job.buffName = buffName
                     job.category = 'groupBuff'
-                    job.key      = entry.spell .. ':' .. tostring(tid)
+                    job.key      = resolvedSpell .. ':' .. tostring(tid)
                     rt.castService:enqueue(job)
                 end
             end

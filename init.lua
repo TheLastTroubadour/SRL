@@ -174,10 +174,10 @@ local function DrawDebugWindow()
         local nukeDecision = RunTime.nukeDecision
         if nukeDecision then
             ImGui.BeginChild("NukeList", 0, 80, true)
-            for _, t in ipairs(nukeDecision.nukeList) do
+            for _, t in ipairs(nukeDecision.nukeList or {}) do
                 ImGui.Text(string.format("Nuke: %s | gem %s", t.name, tostring(t.gem)))
             end
-            for _, t in ipairs(nukeDecision.joltList) do
+            for _, t in ipairs(nukeDecision.joltList or {}) do
                 ImGui.Text(string.format("Jolt: %s | gem %s | aggro >%s%%",
                     t.name, tostring(t.gem), tostring(t.aggroThreshold or nukeDecision.joltThreshold)
                 ))
@@ -192,7 +192,7 @@ local function DrawDebugWindow()
         local abilityDecision = RunTime.abilityDecision
         if abilityDecision then
             ImGui.BeginChild("AbilityList", 0, 80, true)
-            for _, t in ipairs(abilityDecision.abilityList) do
+            for _, t in ipairs(abilityDecision.abilityList or {}) do
                 ImGui.Text(string.format("%s | %s", t.name, t.type))
             end
             ImGui.EndChild()
@@ -557,6 +557,11 @@ local function mainLoop()
             dead       = ctx.dead == true,
             zone       = mq.TLO.Zone.ShortName() or '',
             class      = ctx.myClass or '',
+            pctExp     = mq.TLO.Me.PctExp() or 0,
+            pctAAExp   = mq.TLO.Me.PctAAExp() or 0,
+            aaUnspent  = mq.TLO.Me.AAPoints() or 0,
+            aaAssigned = mq.TLO.Me.AAPointsAssigned() or 0,
+            aaTotal    = (mq.TLO.Me.AAPoints() or 0) + (mq.TLO.Me.AAPointsAssigned() or 0),
         }
         statusService:update(myStatus)
         busService.actor:broadcast('char_status', myStatus)

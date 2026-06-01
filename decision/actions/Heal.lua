@@ -2,6 +2,7 @@ local mq = require 'mq'
 local Job = require 'model.Job'
 local TableUtil = require 'util.TableUtil'
 local Target = require 'service.TargetService'
+local SpellUtil = require 'util.SpellUtil'
 local HealDecision = {}
 
 HealDecision.__index = HealDecision
@@ -33,10 +34,7 @@ function HealDecision:score(ctx)
     self.groupHealPending = false
 
     if ctx.casting then return 0 end
-
-    if not ctx.roles[HEALER_ROLE] then
-        return 0
-    end
+    if not ctx.roles[HEALER_ROLE] then return 0 end
 
     local targets = ctx.self.heal.group.memberStatus
 
@@ -45,30 +43,60 @@ function HealDecision:score(ctx)
         return 110
     end
 
-    -- Normal heal selection
-    local bestTarget = self:selectBestTarget(targets)
+    -- Find the highest-scoring target that actually has an applicable heal spell.
+    -- selectBestTarget + selectHealSpell was split across two passes, which caused
+    -- the tank (high weight) to win the score race even when above their threshold,
+    -- blocking lower-weighted members who genuinely needed a heal.
+    local now = mq.gettime()
+    local bestTarget, bestHeal, bestScore = nil, nil, 0
 
-    if bestTarget then
-        local heal = self:selectHealSpell(bestTarget, ctx.self.heal.spells)
-        if heal then
-            local spell = mq.TLO.Spell(heal.spell)
-            local spellManaCost = spell.Mana() or 0
-            local spellRange = tonumber(spell.Range()) or 200
-            local healSpawn = mq.TLO.Spawn('id ' .. tostring(bestTarget.id))
-            if healSpawn() and (tonumber(healSpawn.Distance()) or 0) > spellRange then return 0 end
-            if ctx.currentMana > spellManaCost and mq.TLO.Me.SpellReady(heal.spell)() then
-                self.job = Job:new(
-                        bestTarget.id,
-                        bestTarget.name,
-                        heal.spell,
-                        "heal",
-                        heal.priority,
-                        heal.gem
-                )
-                self.job.targetRole = bestTarget.role
-                return 105
+    for _, t in ipairs(targets) do
+        if not t.hp then goto continue end
+
+        if t.role ~= 'tank' and self.healCooldown[t.id] and now < self.healCooldown[t.id] then
+            goto continue
+        end
+
+        local weight = t.role == 'tank' and 2 or (t.role == 'important' and 1.5 or 1)
+        local score  = (100 - t.hp) * weight
+
+        if score > bestScore then
+            local heal = self:selectHealSpell(t, ctx.self.heal.spells)
+            if heal then
+                -- Lazy-resolve rank once; same pattern as HoTDecision
+                if not heal._rspell then
+                    heal._rspell = SpellUtil.resolveRank(heal.spell, 'spell')
+                end
+                local rspell        = heal._rspell or heal.spell
+                local spell         = mq.TLO.Spell(rspell)
+                local spellManaCost = spell.Mana() or 0
+                local spellRange    = tonumber(spell.Range()) or 200
+                local healSpawn     = mq.TLO.Spawn('id ' .. tostring(t.id))
+                if healSpawn() and not healSpawn.Dead() and (tonumber(healSpawn.Distance()) or 0) <= spellRange then
+                    if ctx.currentMana > spellManaCost and mq.TLO.Me.SpellReady(rspell)() then
+                        bestScore  = score
+                        bestTarget = t
+                        bestHeal   = heal
+                    end
+                end
             end
         end
+
+        ::continue::
+    end
+
+    if bestTarget and bestHeal then
+        local resolvedName = bestHeal._rspell or bestHeal.spell
+        self.job = Job:new(
+            bestTarget.id,
+            bestTarget.name,
+            resolvedName,
+            "heal",
+            bestHeal.priority or 450,
+            bestHeal.gem
+        )
+        self.job.targetRole = bestTarget.role
+        return 105
     end
 
     return 0
@@ -157,10 +185,13 @@ function HealDecision:checkGroupHeal(targets)
 
     local required = tankInjured and minInjuredWithTank or minInjured
     if injuredInRange >= required then
+        if not groupSpell._rspell then
+            groupSpell._rspell = SpellUtil.resolveRank(groupSpell.spell, 'spell')
+        end
         self.job = Job:new(
                 mq.TLO.Me.ID(),
                 mq.TLO.Me.Name(),
-                groupSpell.spell,
+                groupSpell._rspell or groupSpell.spell,
                 "heal",
                 480,
                 groupSpell.gem

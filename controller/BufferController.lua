@@ -4,6 +4,31 @@ local StringUtil = require 'util.StringUtil'
 local BufferController = {}
 BufferController.__index = BufferController
 
+local RANK_SUFFIXES = { '', ' Rk. II', ' Rk. III' }
+
+local function stripRank(spell)
+    return (spell:gsub('%s+Rk%.%s*%a+$', ''))
+end
+
+local function findBuff(spell)
+    local base = stripRank(spell)
+    for _, suffix in ipairs(RANK_SUFFIXES) do
+        local b = mq.TLO.Me.Buff('=' .. base .. suffix)
+        if b() then return true, b.Duration.TotalSeconds() or 0 end
+        local s = mq.TLO.Me.Song('=' .. base .. suffix)
+        if s() then return true, s.Duration.TotalSeconds() or 0 end
+    end
+    return false, 0
+end
+
+local function isBlocked(spell)
+    local base = stripRank(spell)
+    for _, suffix in ipairs(RANK_SUFFIXES) do
+        if mq.TLO.Me.BlockedBuff('=' .. base .. suffix)() then return true end
+    end
+    return false
+end
+
 function BufferController:new(bus)
     local self = setmetatable({}, BufferController)
     self.bus  = bus
@@ -69,19 +94,9 @@ function BufferController:handleRequest(sender, data)
     local spell = data.data.spell
     local characterId = mq.TLO.Me.ID()
 
-    local buff = mq.TLO.Me.Buff('=' .. spell)
-    local hasBuff = buff() ~= nil
-    local duration = hasBuff and (buff.Duration.TotalSeconds() or 0) or 0
+    local hasBuff, duration = findBuff(spell)
 
-    -- Fall back to song window (bard songs, short-duration buffs)
-    if not hasBuff then
-        local song = mq.TLO.Me.Song('=' .. spell)
-        hasBuff = song() ~= nil
-        duration = hasBuff and (song.Duration.TotalSeconds() or 0) or 0
-    end
-
-    -- Treat blocked buffs as present so the caster stops trying
-    if not hasBuff and mq.TLO.Me.BlockedBuff('=' .. spell)() then
+    if not hasBuff and isBlocked(spell) then
         hasBuff = true
         duration = 99999
     end

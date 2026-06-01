@@ -186,10 +186,11 @@ function Context:build(state)
             local myName = mq.TLO.Me.Name()
             seen[myName] = true
             table.insert(ctx.self.heal.group.memberStatus, {
-                id   = mq.TLO.Me.ID(),
-                name = myName,
-                hp   = mq.TLO.Me.PctHPs(),
-                role = self:getHealerRole(myName)
+                id      = mq.TLO.Me.ID(),
+                name    = myName,
+                hp      = mq.TLO.Me.PctHPs(),
+                role    = self:getHealerRole(myName),
+                inGroup = true,
             })
 
             for i = 1, ctx.self.heal.group.members do
@@ -201,10 +202,11 @@ function Context:build(state)
                         seen[name] = true
                         local role = self:getHealerRole(name)
                         table.insert(ctx.self.heal.group.memberStatus, {
-                            id = m.ID(),
-                            name = name,
-                            hp = m.PctHPs(),
-                            role = role
+                            id      = m.ID(),
+                            name    = name,
+                            hp      = m.PctHPs(),
+                            role    = role,
+                            inGroup = true,
                         })
                     end
                 end
@@ -229,11 +231,15 @@ function Context:build(state)
                         if id then
                             seen[name] = true
                             local role = self:getHealerRole(name)
+                            -- Prefer live spawn HP — raid frame HP is stale for out-of-group members
+                            local spawn = mq.TLO.Spawn('id ' .. id)
+                            local hp = (spawn() and spawn.PctHPs()) or r.PctHPs()
                             table.insert(ctx.self.heal.group.memberStatus, {
-                                id = id,
-                                name = name,
-                                hp = r.PctHPs(),
-                                role = role
+                                id      = id,
+                                name    = name,
+                                hp      = hp,
+                                role    = role,
+                                inGroup = false,
                             })
                         end
                     end
@@ -250,10 +256,11 @@ function Context:build(state)
                         seen[name] = true
                         local role = self:getHealerRole(name)
                         table.insert(ctx.self.heal.group.memberStatus, {
-                            id = xt.ID(),
-                            name = name,
-                            hp = xt.PctHPs(),
-                            role = role
+                            id      = xt.ID(),
+                            name    = name,
+                            hp      = xt.PctHPs(),
+                            role    = role,
+                            inGroup = false,
                         })
                     end
                 end

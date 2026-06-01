@@ -117,6 +117,7 @@ end
 function BuffService:update(ctx)
     if ctx and ctx.dead then return end
     if ctx and ctx.invis then return end
+    if State.flags.buffDisabled then return end
 
     local inCombat = (ctx and ctx.numberOfAggresiveInXTar and ctx.numberOfAggresiveInXTar > 0)
                   or self.combatService:isInCombat()

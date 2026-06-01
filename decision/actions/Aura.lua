@@ -24,8 +24,13 @@ function AuraDecision:score(ctx)
 
     if not self.config:get('Aura.CastAura') then return 0 end
 
-    local aura = self.config:get('Aura.Aura')
-    if not aura or not aura.spell or aura.spell == '' then return 0 end
+    local auraSpell = self.config:get('Aura.spell')
+    if not auraSpell or auraSpell == '' then return 0 end
+    local aura = {
+        spell = auraSpell,
+        type  = self.config:get('Aura.type'),
+        gem   = self.config:get('Aura.gem'),
+    }
 
     if self:isActive(aura.spell) then return 0 end
 

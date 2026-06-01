@@ -35,6 +35,10 @@ function StatusService:update(data)
         dead      = data.dead,
         zone      = data.zone,
         class     = data.class or '',
+        pctExp    = data.pctExp,
+        pctAAExp  = data.pctAAExp,
+        aaUnspent = data.aaUnspent,
+        aaTotal   = data.aaTotal,
         updatedAt = mq.gettime(),
     }
 end

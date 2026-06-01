@@ -48,6 +48,7 @@ State.flags = {
     aeEnabled             = false,
     expMode               = false,
     medDisabled           = false,
+    buffDisabled          = false,
     commandDebuffTargetId = nil,
     commandDotTargetId    = nil,
     castInFlight          = false,
