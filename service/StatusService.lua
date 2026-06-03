@@ -37,8 +37,9 @@ function StatusService:update(data)
         class     = data.class or '',
         pctExp    = data.pctExp,
         pctAAExp  = data.pctAAExp,
-        aaUnspent = data.aaUnspent,
-        aaTotal   = data.aaTotal,
+        aaUnspent  = data.aaUnspent,
+        aaAssigned = data.aaAssigned,
+        aaTotal    = data.aaTotal,
         updatedAt = mq.gettime(),
     }
 end
