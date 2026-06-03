@@ -1,6 +1,7 @@
-local mq    = require 'mq'
-local State = require 'core.State'
-local Target = require 'service.TargetService'
+local mq       = require 'mq'
+local State    = require 'core.State'
+local Target   = require 'service.TargetService'
+local SpellUtil = require 'util.SpellUtil'
 local DebuffDecision = {}
 DebuffDecision.__index = DebuffDecision
 
@@ -212,16 +213,17 @@ function DebuffDecision:execute(ctx)
             mq.delay(castTime + 500, function() return not mq.TLO.Me.Casting() end)
         end
     else
-        if not mq.TLO.Me.SpellReady(debuff.spell)() then return end
+        local resolvedSpell = SpellUtil.resolveRank(debuff.spell, 'spell')
+        if not mq.TLO.Me.SpellReady(resolvedSpell)() then return end
 
-        local spell = mq.TLO.Spell(debuff.spell)
+        local spell = mq.TLO.Spell(resolvedSpell)
         local duration = spell and spell.Duration.TotalSeconds() or 60
         self.retryTimer[k] = mq.gettime() + math.max((duration * 1000) - 18000, 30000)
         self.lastCastKey = k
 
         mq.cmd('/stick off')
         mq.cmd('/nav stop')
-        local gem = mq.TLO.Me.Gem(debuff.spell)() or debuff.gem
+        local gem = mq.TLO.Me.Gem(resolvedSpell)() or debuff.gem
         if not gem then return end
         mq.cmdf('/cast %s', gem)
     end
@@ -238,7 +240,7 @@ function DebuffDecision:isEntryReady(key, debuff)
     elseif entryType == 'aa' then
         return mq.TLO.Me.AltAbilityReady(debuff.spell)() == true
     else
-        return mq.TLO.Me.SpellReady(debuff.spell)() == true
+        return mq.TLO.Me.SpellReady(SpellUtil.resolveRank(debuff.spell, 'spell'))() == true
     end
 end
 

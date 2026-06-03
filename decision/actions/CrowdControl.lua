@@ -1,5 +1,6 @@
-local mq = require 'mq'
-local Target = require 'service.TargetService'
+local mq       = require 'mq'
+local Target   = require 'service.TargetService'
+local SpellUtil = require 'util.SpellUtil'
 
 
 local CCDecision = {}
@@ -11,6 +12,7 @@ function CCDecision:new(config)
     self.config = config
     self.spells = self:loadSpells()
     self.mezzed = {}            -- [targetId] = recastAt (timestamp)
+    self.lastMezVerify = 0
     self.immune = {}            -- [targetId] = true (in-memory, current session)
     self.immuneNames = {}       -- [name:lower()] = true (persistent, from sidecar)
     self.maxTankedMobsOverride = nil
@@ -67,6 +69,7 @@ function CCDecision:score(ctx)
     if ctx.casting then return 0 end
 
     local now = mq.gettime()
+    self:verifyMezzedTargets()
     self:cleanMezTracker()
 
     if ctx.roles['bard'] then
@@ -84,7 +87,7 @@ function CCDecision:scoreBard(ctx, now)
         if spell then
             self.pendingTarget = expiringId
             self.pendingSpell = spell
-            return 93
+            return 120
         end
     end
 
@@ -95,7 +98,7 @@ function CCDecision:scoreBard(ctx, now)
         if spell then
             self.pendingTarget = target
             self.pendingSpell = spell
-            return 93
+            return 120
         end
     end
 
@@ -109,7 +112,7 @@ function CCDecision:scoreEnchanter(ctx)
         self.pendingTarget = aeCenter
         self.pendingSpell = aeSpell
         self.pendingAeTargets = aeTargets
-        return 95
+        return 120
     end
 
     -- Fall back to single target mez
@@ -163,9 +166,10 @@ function CCDecision:execute(ctx)
         mq.cmd('/nav stop')
     end
     self.waitingForResult = true
-    local gem = mq.TLO.Me.Gem(self.pendingSpell.spell)() or self.pendingSpell.gem
+    local spellName = self.pendingSpell._resolved or SpellUtil.resolveRank(self.pendingSpell.spell, 'spell')
+    local gem = mq.TLO.Me.Gem(spellName)() or self.pendingSpell.gem
     if not gem then return end
-    local castTime = (mq.TLO.Spell(self.pendingSpell.spell).CastTime.TotalSeconds() or 3) * 1000 + 1500
+    local castTime = (mq.TLO.Spell(spellName).CastTime.TotalSeconds() or 3) * 1000 + 1500
     mq.cmdf('/cast %s', gem)
     mq.delay(1000, function() return mq.TLO.Me.Casting() ~= nil end)
     mq.delay(castTime, function() return not mq.TLO.Me.Casting() end)
@@ -198,9 +202,10 @@ function CCDecision:findAeMezOpportunity(ctx)
 
     for _, aeSpell in ipairs(self.spells) do
         if not aeSpell.ae then goto continue end
-        if not mq.TLO.Me.SpellReady(aeSpell.spell)() then goto continue end
+        local aeResolved = SpellUtil.resolveRank(aeSpell.spell, 'spell')
+        if not mq.TLO.Me.SpellReady(aeResolved)() then goto continue end
 
-        local aeRange = mq.TLO.Spell(aeSpell.spell).AERange() or 30
+        local aeRange = mq.TLO.Spell(aeResolved).AERange() or 30
         local minTargets = aeSpell.aeMinTargets or 2
 
         for _, centerId in ipairs(unmezzed) do
@@ -307,14 +312,42 @@ end
 function CCDecision:findReadySingleSpell(targetId)
     local targetLevel = targetId and mq.TLO.Spawn('id ' .. targetId).Level() or nil
     for _, spell in ipairs(self.spells) do
-        if not spell.ae
-            and mq.TLO.Me.SpellReady(spell.spell)()
-            and (not spell.maxLevel or not targetLevel or targetLevel <= spell.maxLevel)
-        then
-            return spell
+        if not spell.ae then
+            local resolved = SpellUtil.resolveRank(spell.spell, 'spell')
+            if mq.TLO.Me.SpellReady(resolved)()
+                and (not spell.maxLevel or not targetLevel or targetLevel <= spell.maxLevel)
+            then
+                spell._resolved = resolved
+                return spell
+            end
         end
     end
     return nil
+end
+
+local MEZ_VERIFY_INTERVAL = 2000
+
+function CCDecision:verifyMezzedTargets()
+    local now = mq.gettime()
+    if (now - self.lastMezVerify) < MEZ_VERIFY_INTERVAL then return end
+    self.lastMezVerify = now
+
+    local prevTargetId = mq.TLO.Target.ID()
+
+    for id, _ in pairs(self.mezzed) do
+        local spawn = mq.TLO.Spawn('id ' .. id)
+        if not spawn() then goto continue end
+        mq.cmdf('/target id %d', id)
+        mq.delay(500, function() return mq.TLO.Target.ID() == id end)
+        if mq.TLO.Target.ID() == id and not mq.TLO.Target.Mezzed() then
+            self.mezzed[id] = nil
+        end
+        ::continue::
+    end
+
+    if prevTargetId and prevTargetId ~= 0 then
+        Target:getTargetById(prevTargetId)
+    end
 end
 
 function CCDecision:cleanMezTracker()
