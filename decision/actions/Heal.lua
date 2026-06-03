@@ -99,6 +99,28 @@ function HealDecision:score(ctx)
         return 105
     end
 
+    -- Top-off: heal anyone below threshold when nothing urgent is needed
+    local topOff = self.config:get('Heals.TopOff')
+    if topOff and topOff.spell then
+        if not topOff._rspell then
+            topOff._rspell = SpellUtil.resolveRank(topOff.spell, 'spell')
+        end
+        local rspell = topOff._rspell or topOff.spell
+        local threshold = topOff.threshold or 99
+        if mq.TLO.Me.SpellReady(rspell)() then
+            for _, t in ipairs(targets) do
+                if t.hp and t.hp < threshold and not t.dead then
+                    local healSpawn = mq.TLO.Spawn('id ' .. tostring(t.id))
+                    local spellRange = tonumber(mq.TLO.Spell(rspell).Range()) or 200
+                    if healSpawn() and not healSpawn.Dead() and (tonumber(healSpawn.Distance()) or 0) <= spellRange then
+                        self.job = Job:new(t.id, t.name, rspell, 'heal', 450, topOff.gem)
+                        return 50
+                    end
+                end
+            end
+        end
+    end
+
     return 0
 end
 
