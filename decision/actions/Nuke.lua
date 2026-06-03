@@ -51,7 +51,7 @@ function NukeDecision:score(ctx)
         local jolt = self:findReadyJolt(ctx.aggro, ctx.assist.Id)
         if jolt then
             self.nuke = jolt
-            return 80
+            return 78
         end
         return 0
     end
@@ -61,7 +61,7 @@ function NukeDecision:score(ctx)
         local jolt = self:findReadyJolt(ctx.aggro, ctx.assist.Id)
         if jolt then
             self.nuke = jolt
-            return 80
+            return 78
         end
     end
 
