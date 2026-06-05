@@ -1,5 +1,6 @@
-local mq = require 'mq'
-local Job = require 'model.Job'
+local mq       = require 'mq'
+local Job      = require 'model.Job'
+local SpellUtil = require 'util.SpellUtil'
 
 local AbilityDecision = {}
 AbilityDecision.__index = AbilityDecision
@@ -75,7 +76,7 @@ function AbilityDecision:execute(ctx)
         elseif job.type == 'disc' then
             -- Only one disc per execute; gate against activation window
             if now - self.lastDiscTime < 3000 then goto continueExec end
-            mq.cmdf('/disc %s', job.name)
+            mq.cmdf('/disc %s', resolvedName(job))
             self.lastDiscTime = now
             if job.stacks and job.targetId then
                 local duration = self:resolveBuffDuration(job)
@@ -119,6 +120,16 @@ function AbilityDecision:execute(ctx)
         ::continueExec::
     end
     ::doneExec::
+end
+
+local function resolvedName(entry)
+    if entry.type == 'disc' then
+        if not entry._resolved then
+            entry._resolved = SpellUtil.resolveRank(entry.name, 'disc')
+        end
+        return entry._resolved
+    end
+    return entry.name
 end
 
 function AbilityDecision:canUse(entry, ctx)
@@ -168,7 +179,7 @@ function AbilityDecision:canUse(entry, ctx)
     end
 
     if entry.type == 'disc' then
-        return mq.TLO.Me.CombatAbilityReady(entry.name)() == true
+        return mq.TLO.Me.CombatAbilityReady(resolvedName(entry))() == true
     end
 
     if entry.type == 'aa' then
@@ -190,7 +201,7 @@ function AbilityDecision:isInstant(entry)
         return (mq.TLO.Me.AltAbility(entry.name).Spell.CastTime() or 0) == 0
     end
     if entry.type == 'disc' then
-        return (mq.TLO.Spell(entry.name).CastTime() or 0) == 0
+        return (mq.TLO.Spell(resolvedName(entry)).CastTime() or 0) == 0
     end
     if entry.type == 'item' then
         local item = mq.TLO.FindItem('=' .. entry.name)

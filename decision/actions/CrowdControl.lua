@@ -177,6 +177,7 @@ function CCDecision:execute(ctx)
     -- Post-cast: for enchanters, read actual focused duration from the cast target.
     -- Works for both ST and AE mez — AE hit mobs share the same focused duration.
     if not ctx.roles['bard'] then
+        mq.delay(500, function() return mq.TLO.Target.BuffsPopulated() end)
         if mq.TLO.Target.ID() == self.pendingTarget and mq.TLO.Target.Mezzed() then
             local focusedMs = mq.TLO.Target.Mezzed.Duration() or 0
             if focusedMs > 0 then
@@ -338,7 +339,7 @@ function CCDecision:verifyMezzedTargets()
         local spawn = mq.TLO.Spawn('id ' .. id)
         if not spawn() then goto continue end
         mq.cmdf('/target id %d', id)
-        mq.delay(500, function() return mq.TLO.Target.ID() == id end)
+        mq.delay(500, function() return mq.TLO.Target.ID() == id and mq.TLO.Target.BuffsPopulated() end)
         if mq.TLO.Target.ID() == id and not mq.TLO.Target.Mezzed() then
             self.mezzed[id] = nil
         end

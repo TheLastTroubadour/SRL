@@ -145,6 +145,9 @@ function CastService:startWorker()
                     job.notBefore = mq.gettime() + 500
                     self:enqueue(job)
                 else
+                    if job.type == 'buff' then
+                        mq.delay(500, function() return mq.TLO.Target.BuffsPopulated() end)
+                    end
                     if job.type == 'buff' and self:checkIfHasBuff(job) then
                         self.buffService:setTakeHoldCooldownOnJob(job)
                         -- Notify all bots so group members can confirm they
