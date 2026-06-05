@@ -69,7 +69,7 @@ HELP['filters'] = {
     '[SRL] Tokens: character name, class (CLR/BRD/SHM...), armor (Silk/Leather/Chain/Plate), Group',
     '[SRL]',
     '[SRL]   /srl quickburn include=Plate      - only plate wearers',
-    '[SRL]   /srl follow exclude=Loewit        - everyone except Loewit',
+    '[SRL]   /srl follow exclude=Healer        - everyone except Healer',
     '[SRL]   /srl follow include=Group         - only group members',
     '[SRL]',
     '[SRL] exclude= takes priority over include= if both are set.',
