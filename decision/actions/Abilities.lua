@@ -1,6 +1,7 @@
 local mq       = require 'mq'
 local Job      = require 'model.Job'
 local SpellUtil = require 'util.SpellUtil'
+local ConfigValidator = require 'util.ConfigValidator'
 
 local AbilityDecision = {}
 AbilityDecision.__index = AbilityDecision
@@ -66,6 +67,16 @@ function AbilityDecision:score(ctx)
     return 75
 end
 
+local function resolvedName(entry)
+    if entry.type == 'disc' then
+        if not entry._resolved then
+            entry._resolved = SpellUtil.resolveRank(entry.name, 'disc')
+        end
+        return entry._resolved
+    end
+    return entry.name
+end
+
 function AbilityDecision:execute(ctx)
     local now = mq.gettime()
     for _, job in ipairs(self.pendingJobs) do
@@ -120,16 +131,6 @@ function AbilityDecision:execute(ctx)
         ::continueExec::
     end
     ::doneExec::
-end
-
-local function resolvedName(entry)
-    if entry.type == 'disc' then
-        if not entry._resolved then
-            entry._resolved = SpellUtil.resolveRank(entry.name, 'disc')
-        end
-        return entry._resolved
-    end
-    return entry.name
 end
 
 function AbilityDecision:canUse(entry, ctx)
@@ -238,6 +239,7 @@ function AbilityDecision:loadAbilities()
         for _, v in ipairs(values) do
             local name = v.Ability
             local jobType = v.type or 'ability'
+            if not ConfigValidator.isValid(name, jobType) then goto continueLoad end
             local priority = v.priority or 50
             local job = Job:new(nil, nil, tostring(name), jobType, priority, nil)
             if v.debuff then
@@ -256,6 +258,7 @@ function AbilityDecision:loadAbilities()
                 job.aggroThreshold = v.aggroThreshold
             end
             table.insert(jobList, job)
+            ::continueLoad::
         end
     end
     return jobList

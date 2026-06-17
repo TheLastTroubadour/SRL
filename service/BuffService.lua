@@ -41,19 +41,17 @@ function BuffService:pollIfDue(target, spell)
 
     local k = key(target, spell)
     local now = mq.gettime()
-    if not now then return nil end
+    if not now or now == 0 then return nil end
 
     --supression active (per target:spell)
-    if self.cooldowns[k] and now < self.cooldowns[k] then
-        return nil
-    end
+    local cd = self.cooldowns[k]
+    if cd and now < cd then return nil end
 
     -- Spell-level suppression: prevents same spell being polled for multiple targets
     -- simultaneously (e.g. group buffs listed under charactersToBuff)
     local spellKey = 'spell:' .. spell
-    if self.cooldowns[spellKey] and now < self.cooldowns[spellKey] then
-        return nil
-    end
+    local cdSpell = self.cooldowns[spellKey]
+    if cdSpell and now < cdSpell then return nil end
 
     local spawn = mq.TLO.Spawn('pc =' .. target)
 
@@ -70,7 +68,8 @@ function BuffService:pollIfDue(target, spell)
     end
 
     -- Not time yet
-    if self.nextCheck[k] and now < self.nextCheck[k] then
+    local nc = self.nextCheck[k]
+    if type(nc) == 'number' and now < nc then
         return nil
     end
 
@@ -126,8 +125,12 @@ function BuffService:update(ctx)
     -- Instant buffs: no polling, no movement gate — fire directly when missing and ready
     self:processInstantBuffs(inCombat)
 
-    if State.follow.active or State.move.active then return end
-    if mq.TLO.Navigation.Active() then return end
+    -- Block buffs while actually moving (stick active = still catching up to follow target),
+    -- but not merely because follow mode is enabled. Casting issues /stick off which is safe
+    -- when already arrived; it would break formation only if stick is mid-chase.
+    if State.move.active then return end
+    if State.follow.active and mq.TLO.Stick.Active() then return end
+    if mq.TLO.Plugin("MQ2Nav").IsLoaded() and mq.TLO.Navigation.Active() then return end
 
     -- Combat buffs only in combat
     if inCombat then

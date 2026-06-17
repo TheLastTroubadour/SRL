@@ -17,8 +17,8 @@ function HealService:new(castService, config)
 
     self.healSpells = config:get("Heals.Spells") or {}
 
-    self.tanks = config:get("Heals.Tanks") or {}
-    self.importantBots = config:get("Heals.ImportantBots") or {}
+    self.tanks = TableUtil.toList(config:get("Heals.Tanks"))
+    self.importantBots = TableUtil.toList(config:get("Heals.ImportantBots"))
 
     if(#self.healSpells > 0) then
         for _,roleSpells in pairs(self.healSpells) do

@@ -43,6 +43,7 @@ function AssistDecision:score(ctx)
 
     if ctx.assist.dead then
         mq.cmd('/attack off')
+        mq.cmd('/stick off')
         self.lastEngagedId = nil
         return 0
     end
@@ -71,7 +72,12 @@ function AssistDecision:execute(ctx)
 
     Target:getTargetById(ctx.assist.Id)
 
-    mq.cmdf('/stick %s %s moveback uw', ctx.assist.stickPoint, ctx.assist.stickDistance)
+    local dist = ctx.assist.stickDistance
+    if tostring(dist):lower() == 'maxmelee' then
+        dist = (mq.TLO.Target.MaxMeleeTo() or 15) - 1
+    end
+
+    mq.cmdf('/stick %s %s moveback uw', ctx.assist.stickPoint, dist)
     mq.delay(50)
     mq.cmd('/attack on')
     self.lastEngagedId   = tostring(ctx.assist.Id)

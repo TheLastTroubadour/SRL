@@ -27,7 +27,13 @@ function MovementDecision:score(ctx)
     end
 
     -- Normal out-of-combat follow
-    if ctx.inCombat then return 0 end
+    -- Use aggressive XTargets + active assist target rather than Me.Combat() alone;
+    -- Me.Combat() stays true for ~30s after a mob dies and would stall follow resumption.
+    local hasActiveCombat = ctx.inCombat and (
+        (ctx.numberOfAggresiveInXTar and ctx.numberOfAggresiveInXTar > 0) or
+        (State.assist.targetId ~= nil)
+    )
+    if hasActiveCombat then return 0 end
     if ctx.casting or State.flags.castInFlight then return 0 end
     if not State.follow.active or not State.follow.followId then return 0 end
 

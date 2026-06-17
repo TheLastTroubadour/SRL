@@ -303,6 +303,10 @@ local function mainLoop()
     -- Extra settle time for the actors system to be ready
     mq.delay(2000)
 
+    if not mq.TLO.Plugin("MQ2Nav").IsLoaded() then
+        Logging.Error("[SRL] MQ2Nav is not loaded. Navigation features will be unavailable. Load it with: /plugin MQ2Nav")
+    end
+
     local config = Config:new(nil)
 
     config:generateCharacterYaml()
@@ -400,6 +404,7 @@ local function mainLoop()
     local abilityDecision = AbilityDecision:new(config)
     burnService:setAbilityDecision(abilityDecision)
     local ccDecision = CCDecision:new(config)
+    ccDecision:setMelodyService(melodyService)
     local clericDecision  = ClericDecision:new(config)
     local giftOfMana      = GiftOfMana:new(config)
     local wizardDecision  = WizardDecision:new(config)

@@ -21,6 +21,7 @@ function CCDecision:new(config)
     self.pendingAeTargets = {}  -- targets AE mez will hit (populated when ae spell chosen)
     self.lastCastTargets = {}   -- targets from the most recent cast attempt
     self.waitingForResult = false
+    self.melodyService = nil
 
     self:loadImmuneSidecar()
 
@@ -42,6 +43,17 @@ function CCDecision:new(config)
     end)
 
     return self
+end
+
+function CCDecision:setMelodyService(ms)
+    self.melodyService = ms
+end
+
+function CCDecision:resumeMelody()
+    local ms = self.melodyService
+    if ms and ms.active then
+        ms:play(ms.active)
+    end
 end
 
 
@@ -70,7 +82,7 @@ function CCDecision:score(ctx)
 
     local now = mq.gettime()
     self:verifyMezzedTargets()
-    self:cleanMezTracker()
+    self:cleanMezTracker(ctx.assist.Id)
 
     if ctx.roles['bard'] then
         return self:scoreBard(ctx, now)
@@ -161,6 +173,8 @@ function CCDecision:execute(ctx)
 
     if ctx.roles['bard'] then
         mq.cmd('/stopsong')
+        -- Wait for the current song to fully stop before casting mez
+        mq.delay(2000, function() return not mq.TLO.Me.Casting() end)
     else
         mq.cmd('/stick off')
         mq.cmd('/nav stop')
@@ -177,7 +191,7 @@ function CCDecision:execute(ctx)
     -- Post-cast: for enchanters, read actual focused duration from the cast target.
     -- Works for both ST and AE mez — AE hit mobs share the same focused duration.
     if not ctx.roles['bard'] then
-        mq.delay(500, function() return mq.TLO.Target.BuffsPopulated() end)
+        mq.delay(500, function() return mq.TLO.Target.BuffsPopulated() == true end)
         if mq.TLO.Target.ID() == self.pendingTarget and mq.TLO.Target.Mezzed() then
             local focusedMs = mq.TLO.Target.Mezzed.Duration() or 0
             if focusedMs > 0 then
@@ -191,6 +205,8 @@ function CCDecision:execute(ctx)
                 end
             end
         end
+    else
+        self:resumeMelody()
     end
 end
 
@@ -339,7 +355,7 @@ function CCDecision:verifyMezzedTargets()
         local spawn = mq.TLO.Spawn('id ' .. id)
         if not spawn() then goto continue end
         mq.cmdf('/target id %d', id)
-        mq.delay(500, function() return mq.TLO.Target.ID() == id and mq.TLO.Target.BuffsPopulated() end)
+        mq.delay(500, function() return mq.TLO.Target.ID() == id and mq.TLO.Target.BuffsPopulated() == true end)
         if mq.TLO.Target.ID() == id and not mq.TLO.Target.Mezzed() then
             self.mezzed[id] = nil
         end
@@ -351,11 +367,15 @@ function CCDecision:verifyMezzedTargets()
     end
 end
 
-function CCDecision:cleanMezTracker()
+function CCDecision:cleanMezTracker(assistId)
     for id, _ in pairs(self.mezzed) do
-        local spawn = mq.TLO.Spawn('id ' .. id)
-        if not spawn() or spawn.Dead() or spawn.Moving() then
+        if id == tonumber(assistId) then
             self.mezzed[id] = nil
+        else
+            local spawn = mq.TLO.Spawn('id ' .. id)
+            if not spawn() or spawn.Dead() or spawn.Moving() then
+                self.mezzed[id] = nil
+            end
         end
     end
 end

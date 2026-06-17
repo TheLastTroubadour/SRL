@@ -12,6 +12,8 @@ local ARMOR_TYPES = {
     chain   = { RNG=true, SHM=true, BRD=true },
     plate   = { WAR=true, PAL=true, SHD=true, CLR=true },
     melee   = { WAR=true, PAL=true, SHD=true, MNK=true, ROG=true, BER=true, RNG=true, BST=true, BRD=true },
+    healers = { CLR=true, DRU=true, SHM=true },
+    casters = { WIZ=true, MAG=true, NEC=true, ENC=true },
 }
 
 -- Build "key=val key=val ..." string from a list of raw arg tokens,

@@ -134,34 +134,64 @@ function CastService:startWorker()
 
                 local job = table.remove(self.queue, jobIdx)
 
-                self.currentlyInFlight = job
-                State.flags.castInFlight = true
-                local result = self:performCast(job)
-                if result == "NOT_READY" and (job.type == 'disc' or job.type == 'aa') then
-                    -- Burn job not ready yet — put it back so it fires when it comes off cooldown.
-                    -- Set notBefore to prevent immediate retry, which would starve lower-priority
-                    -- burn jobs and spin the coroutine without yielding.
-                    self.queuedKeys[job.key] = nil
-                    job.notBefore = mq.gettime() + 500
-                    self:enqueue(job)
-                else
-                    if job.type == 'buff' then
-                        mq.delay(500, function() return mq.TLO.Target.BuffsPopulated() end)
-                    end
-                    if job.type == 'buff' and self:checkIfHasBuff(job) then
-                        self.buffService:setTakeHoldCooldownOnJob(job)
-                        -- Notify all bots so group members can confirm they
-                        -- received it and suppress duplicate casts.
-                        if self.bus then
-                            self.bus.actor:broadcast('buff_cast', {
-                                casterName = mq.TLO.Me.Name(),
-                                spellName  = job.buffName or job.name,
-                                sender     = mq.TLO.Me.Name(),
-                            })
+                -- For buff jobs, pull all pending casts of the same spell into a batch
+                -- so they share the one gem-swap instead of each paying the 12s mem cost.
+                local batch = { job }
+                if job.type == 'buff' then
+                    for i = #self.queue, 1, -1 do
+                        local j = self.queue[i]
+                        if j and j.name == job.name and j.type == 'buff' then
+                            self.queuedKeys[j.key] = nil
+                            table.remove(self.queue, i)
+                            table.insert(batch, j)
                         end
                     end
-                    self.queuedKeys[job.key] = nil
-                    self.queuedKeys[job.name] = nil
+                end
+
+                State.flags.castInFlight = true
+                for _, batchJob in ipairs(batch) do
+                    -- Validate every batch entry: target may have zoned, died, or walked out of range
+                    local s = mq.TLO.Spawn('id ' .. batchJob.targetId)
+                    if not s() or s.Dead() then
+                        self.queuedKeys[batchJob.key] = nil
+                        goto batchNext
+                    end
+                    local range = mq.TLO.Spell(batchJob.name).Range() or 0
+                    local spellRange = tonumber(range) == 0 and (mq.TLO.Spell(batchJob.name).AERange() or 0) or range
+                    if tonumber(spellRange) > 0 and (s.Distance() or 0) > tonumber(spellRange) then
+                        self.queuedKeys[batchJob.key] = nil
+                        goto batchNext
+                    end
+
+                    self.currentlyInFlight = batchJob
+                    local result = self:performCast(batchJob)
+                    if result == "NOT_READY" and (batchJob.type == 'disc' or batchJob.type == 'aa') then
+                        -- Burn job not ready yet — put it back so it fires when it comes off cooldown.
+                        -- Set notBefore to prevent immediate retry, which would starve lower-priority
+                        -- burn jobs and spin the coroutine without yielding.
+                        self.queuedKeys[batchJob.key] = nil
+                        batchJob.notBefore = mq.gettime() + 500
+                        self:enqueue(batchJob)
+                    else
+                        if batchJob.type == 'buff' then
+                            mq.delay(500, function() return mq.TLO.Target.BuffsPopulated() == true end)
+                        end
+                        if batchJob.type == 'buff' and self:checkIfHasBuff(batchJob) then
+                            self.buffService:setTakeHoldCooldownOnJob(batchJob)
+                            -- Notify all bots so group members can confirm they
+                            -- received it and suppress duplicate casts.
+                            if self.bus then
+                                self.bus.actor:broadcast('buff_cast', {
+                                    casterName = mq.TLO.Me.Name(),
+                                    spellName  = batchJob.buffName or batchJob.name,
+                                    sender     = mq.TLO.Me.Name(),
+                                })
+                            end
+                        end
+                        self.queuedKeys[batchJob.key] = nil
+                        self.queuedKeys[batchJob.name] = nil
+                    end
+                    ::batchNext::
                 end
                 self.currentlyInFlight = nil
                 State.flags.castInFlight = false

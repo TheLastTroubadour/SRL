@@ -34,12 +34,13 @@ function ResourceDecision:score(ctx)
         return 0
     end
 
-    if ctx.numberOfAggresiveInXTar and ctx.numberOfAggresiveInXTar > 0 then
-        self.active = false
-        return 0
-    end
+    local inCombat = (ctx.numberOfAggresiveInXTar and ctx.numberOfAggresiveInXTar > 0)
+                  or (ctx.assist.Id ~= nil and not State.flags.isPuller)
 
-    if ctx.assist.Id and not State.flags.isPuller then
+    if inCombat then
+        if self.active and mq.TLO.Me.Sitting() then
+            mq.cmd('/stand')
+        end
         self.active = false
         return 0
     end
@@ -67,6 +68,7 @@ function ResourceDecision:score(ctx)
         if ctx.myClass == 'BRD' and self.melodyService then
             self.melodyService:resume()
         end
+        if mq.TLO.Me.Sitting() then mq.cmd('/stand') end
         return 0
     end
 

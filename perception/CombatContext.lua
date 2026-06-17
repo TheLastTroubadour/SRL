@@ -1,6 +1,7 @@
 local mq = require 'mq'
 local RoleService = require 'service.RoleService'
 local State = require 'core.State'
+local TableUtil = require 'util.TableUtil'
 local Context = {}
 Context.__index = Context
 
@@ -15,8 +16,8 @@ function Context:new(config)
 
     self.heal = {
         spells = config:get('Heals.Spells') or {},
-        tanks = config:get('Heals.Tanks') or {},
-        importantBots = config:get('Heals.ImportantBots') or {}
+        tanks = TableUtil.toList(config:get('Heals.Tanks')),
+        importantBots = TableUtil.toList(config:get('Heals.ImportantBots'))
     }
 
     self.assistType       = config:get('AssistSettings.type') or 'off'

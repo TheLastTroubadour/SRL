@@ -48,7 +48,7 @@ function NukeDecision:score(ctx)
 
     -- At or above lockout: jolts only, nothing if no jolt is ready
     if ctx.aggro >= self.lockoutThreshold then
-        local jolt = self:findReadyJolt(ctx.aggro, ctx.assist.Id)
+        local jolt = self:findReadyJolt(ctx.aggro, ctx.assist.Id, ctx.assist.HP)
         if jolt then
             self.nuke = jolt
             return 78
@@ -56,17 +56,18 @@ function NukeDecision:score(ctx)
         return 0
     end
 
-    -- Above jolt threshold: prefer jolt, fall back to nuke if no jolt ready
+    -- Above jolt threshold: use jolt only — do not fall back to nuking
     if ctx.aggro > self.joltThreshold then
-        local jolt = self:findReadyJolt(ctx.aggro, ctx.assist.Id)
+        local jolt = self:findReadyJolt(ctx.aggro, ctx.assist.Id, ctx.assist.HP)
         if jolt then
             self.nuke = jolt
             return 78
         end
+        return 0
     end
 
-    -- Normal nuke (also fallback when aggro > joltThreshold but no jolt ready)
-    local nuke = self:findReady(self.nukeList, ctx.assist.Id)
+    -- Normal nuke
+    local nuke = self:findReady(self.nukeList, ctx.assist.Id, ctx.assist.HP)
     if nuke then
         self.nuke = nuke
         return 80
@@ -102,7 +103,14 @@ end
 
 -- Find the highest-threshold jolt that applies to current aggro and is ready.
 -- Falls back to any ready jolt if the best one is on cooldown.
-function NukeDecision:findReadyJolt(aggro, targetId)
+function NukeDecision:meetsHpCondition(entry, hp)
+    if hp == nil then return true end
+    if entry.hpBelow and hp > entry.hpBelow then return false end
+    if entry.hpAbove and hp < entry.hpAbove then return false end
+    return true
+end
+
+function NukeDecision:findReadyJolt(aggro, targetId, hp)
     if not self.joltList or #self.joltList == 0 then return nil end
     local best = nil
     for _, entry in ipairs(self.joltList) do
@@ -116,14 +124,14 @@ function NukeDecision:findReadyJolt(aggro, targetId)
 
     if best then
         best:setTargetId(targetId)
-        if self:canUse(best) then return best end
+        if self:meetsHpCondition(best, hp) and self:canUse(best) then return best end
     end
 
     -- Best jolt on cooldown — fall back to any ready jolt
-    return self:findReady(self.joltList, targetId)
+    return self:findReady(self.joltList, targetId, hp)
 end
 
-function NukeDecision:findReady(list, targetId)
+function NukeDecision:findReady(list, targetId, hp)
     if not list or #list == 0 then return nil end
 
     -- Check if any entry has explicit priority set
@@ -138,7 +146,7 @@ function NukeDecision:findReady(list, targetId)
             local idx = (self.nukeIndex - 1 + i) % #list + 1
             local entry = list[idx]
             entry:setTargetId(targetId)
-            if self:canUse(entry) then return entry end
+            if self:meetsHpCondition(entry, hp) and self:canUse(entry) then return entry end
         end
         return nil
     end
@@ -163,7 +171,7 @@ function NukeDecision:findReady(list, targetId)
             local idx = (self.nukeIndex - 1 + i) % #group + 1
             local entry = group[idx]
             entry:setTargetId(targetId)
-            if self:canUse(entry) then return entry end
+            if self:meetsHpCondition(entry, hp) and self:canUse(entry) then return entry end
         end
         -- Nothing ready in this group, fall through to next lower priority
     end
@@ -194,6 +202,8 @@ function NukeDecision:getJobsFromKey(key, jobType)
             local job = Job:new(nil, nil, spellName, entryType, 50, v.gem or 8)
             job.aggroThreshold = v.aggroThreshold
             job.priority       = v.priority or 0
+            job.hpBelow        = v.hpBelow
+            job.hpAbove        = v.hpAbove
             table.insert(jobList, job)
         end
     end

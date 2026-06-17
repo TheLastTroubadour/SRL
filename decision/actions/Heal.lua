@@ -168,7 +168,7 @@ function HealDecision:checkGroupHeal(targets)
 
     if not (groupSpell and groupSpell.spell) then return false end
 
-    local tanks        = self.config:get("Heals.Tanks") or {}
+    local tanks        = TableUtil.toList(self.config:get("Heals.Tanks"))
     local tankSet      = {}
     for _, n in ipairs(tanks) do tankSet[n] = true end
 

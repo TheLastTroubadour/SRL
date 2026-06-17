@@ -25,4 +25,11 @@ function tableutil_export.table_print(tbl, indent)
     return toprint
 end
 
+-- Ensures a value from config (which may be a bare string instead of a list) is always a table.
+function tableutil_export.toList(v)
+    if v == nil then return {} end
+    if type(v) == 'table' then return v end
+    return { v }
+end
+
 return tableutil_export

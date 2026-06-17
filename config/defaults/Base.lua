@@ -35,7 +35,7 @@ return {
     AssistSettings = {
         enabled = 'true',
         type = 'melee',
-        meleeStickDistance = 15,
+        meleeStickDistance = 'MaxMelee',
         meleeStickPoint= 'Behind',
         rangedDistance = 100,
         AutoAssistEngagePercent = 98,

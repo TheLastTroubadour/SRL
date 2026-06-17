@@ -2,6 +2,7 @@ local mq = require 'mq'
 local Job = require 'model.Job'
 local State = require 'core.State'
 local SpellUtil = require 'util.SpellUtil'
+local ConfigValidator = require 'util.ConfigValidator'
 
 -- 2.0 first, 1.5 second. 1.0 epics not included. CLR intentionally omitted.
 local CLASS_EPICS = {
@@ -62,6 +63,7 @@ function BurnService:activate(sectionKey)
 
     for _, v in ipairs(abilities) do
         if v.soloBot and v.soloBot:lower() ~= myName:lower() then goto continue end
+        if not ConfigValidator.isValid(v.name, v.type) then goto continue end
         local resolvedName = SpellUtil.resolveRank(v.name, v.type)
         local job = Job:new(myId, myName, resolvedName, v.type, v.priority or 60, nil)
         job.burn = true
