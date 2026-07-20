@@ -37,7 +37,7 @@ local function key(target, spellName)
     return target .. ":" .. spellName
 end
 
-function BuffService:pollIfDue(target, spell)
+function BuffService:pollIfDue(target, spell, rangeOverride)
 
     local k = key(target, spell)
     local now = mq.gettime()
@@ -88,7 +88,7 @@ function BuffService:pollIfDue(target, spell)
     end
 
     -- Out of range
-    local spellRange = self:getSpellRange(spell)
+    local spellRange = self:getSpellRange(spell, rangeOverride)
     if spellRange > 0 and dist > spellRange then
         self.nextCheck[k] = now + 5000
         return nil
@@ -107,7 +107,8 @@ function BuffService:pollIfDue(target, spell)
     )
 end
 
-function BuffService:getSpellRange(spellName)
+function BuffService:getSpellRange(spellName, rangeOverride)
+    if rangeOverride then return tonumber(rangeOverride) end
     local ae = tonumber(mq.TLO.Spell(spellName).AERange()) or 0
     if ae > 0 then return ae end
     return tonumber(mq.TLO.Spell(spellName).Range()) or 0
@@ -163,7 +164,7 @@ function BuffService:processCategory(category, inCombat)
 
         buff.category = category
 
-        local p = self:pollIfDue(buff.targetName, buff.buffName or buff.name)
+        local p = self:pollIfDue(buff.targetName, buff.buffName or buff.name, buff.range)
         if p then
             self:handlePollPromise(buff.targetName, buff, p)
         end
@@ -251,6 +252,7 @@ function BuffService:getBuffInformationForKey(key)
                     local job = Job:new(targetId, character, spellName, jobType, 0, gem)
                     job.alwaysCheck = v.alwaysCheck or false
                     job.buffName = buffName
+                    job.range = v.range
                     table.insert(jobList, job)
                 end
             else
@@ -258,6 +260,7 @@ function BuffService:getBuffInformationForKey(key)
                 local job = Job:new(characterId, mq.TLO.Me.Name(), spellName, jobType, 0, gem)
                 job.alwaysCheck = v.alwaysCheck or false
                 job.buffName = buffName
+                job.range = v.range
                 table.insert(jobList, job)
             end
         end

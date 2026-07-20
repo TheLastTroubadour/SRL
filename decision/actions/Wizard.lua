@@ -9,11 +9,32 @@ function WizardDecision:new(config)
     self.config         = config
     self.pending        = nil
     self.castTimestamps = {}   -- [spellName] = ms timestamp of last cast
+    self.lastCastName   = nil
+
+    mq.event('WizardResisted', '#*#resisted your#*#', function()
+        if self.lastCastName then
+            self.castTimestamps[self.lastCastName] = nil
+            self.lastCastName = nil
+        end
+    end)
+
+    mq.event('WizardInterrupted', '#*#Your spell is interrupted#*#', function()
+        if self.lastCastName then
+            self.castTimestamps[self.lastCastName] = nil
+            self.lastCastName = nil
+        end
+    end)
+
     return self
 end
 
 function WizardDecision:score(ctx)
     self.pending = nil
+
+    if not ctx.casting then
+        mq.doevents('WizardResisted')
+        mq.doevents('WizardInterrupted')
+    end
 
     if ctx.casting then return 0 end
     if mq.TLO.Me.Class.ShortName() ~= 'WIZ' then return 0 end
@@ -39,6 +60,7 @@ function WizardDecision:execute(ctx)
     elseif self.pending.type == 'spell' then
         local gem = mq.TLO.Me.Gem(self.pending.name)() or self.pending.gem
         if not gem then return end
+        self.lastCastName = self.pending.name
         mq.cmdf('/cast %s', gem)
         self.castTimestamps[self.pending.name] = mq.gettime()
     end

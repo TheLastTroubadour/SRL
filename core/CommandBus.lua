@@ -201,6 +201,22 @@ function CommandBus:init()
 
         elseif subcmd == 'stopmelody' then broadcast('StopMelody', extra)
 
+        elseif subcmd == 'med' then
+            local mode = args[1] and args[1]:lower()
+            local modeExtra = buildExtra({ unpack(args, 2) }, { sender=true })
+            if mode == 'on' then
+                mq.cmdf('/dgze /srlevent MedOn sender=%s%s', me, modeExtra)
+                mq.cmdf('/srlevent MedOn sender=%s%s', me, modeExtra)
+            elseif mode == 'off' then
+                mq.cmdf('/dgze /srlevent MedOff sender=%s%s', me, modeExtra)
+                mq.cmdf('/srlevent MedOff sender=%s%s', me, modeExtra)
+            elseif mode == 'full' then
+                mq.cmdf('/dgze /srlevent MedFull sender=%s%s', me, modeExtra)
+                mq.cmdf('/srlevent MedFull sender=%s%s', me, modeExtra)
+            else
+                print('[SRL] Usage: /srl med on|off|full [include=X] [exclude=X]')
+            end
+
         elseif subcmd == 'medon' then
             mq.cmdf('/dgze /srlevent MedOn sender=%s%s', me, extra)
             mq.cmdf('/srlevent MedOn sender=%s%s', me, extra)
@@ -391,8 +407,48 @@ function CommandBus:init()
         elseif subcmd == 'overlay' then
             mq.cmd('/srlevent ToggleGroupStatus')
 
+        elseif subcmd == 'benchhps' then
+            local mode = args[1] and args[1]:lower()
+            if mode == 'start' then
+                mq.cmd('/srlevent BenchHpsStart')
+            elseif mode == 'stop' then
+                mq.cmd('/srlevent BenchHpsStop')
+            else
+                print('[SRL] Usage: /srl benchhps start|stop')
+            end
+
+        elseif subcmd == 'healbench' then
+            local mode = args[1] and args[1]:lower()
+            if mode == 'start' then
+                mq.cmd('/srlevent HealBenchStart')
+            elseif mode == 'stop' then
+                mq.cmd('/srlevent HealBenchStop')
+            else
+                print('[SRL] Usage: /srl healbench start|stop')
+            end
+
         elseif subcmd == 'config' then
             mq.cmd('/srlevent ToggleConfigEditor')
+
+        elseif subcmd == 'charmon' then
+            local npcId    = args[1]
+            local enchanter = args[2]
+            if not npcId or npcId == '' or not enchanter or enchanter == '' then
+                print('[SRL] Usage: /srl charmon <npcId> <enchanterName>')
+                return
+            end
+            mq.cmdf('/dgae /srlevent CharmOn id=%s include=%s sender=%s', npcId, enchanter, me)
+            mq.cmdf('/srlevent CharmOn id=%s include=%s sender=%s', npcId, enchanter, me)
+
+        elseif subcmd == 'charmoff' then
+            local enchanter = args[1]
+            if enchanter and enchanter ~= '' then
+                mq.cmdf('/dgae /srlevent CharmOff include=%s sender=%s', enchanter, me)
+                mq.cmdf('/srlevent CharmOff include=%s sender=%s', enchanter, me)
+            else
+                mq.cmdf('/dgae /srlevent CharmOff sender=%s', me)
+                mq.cmdf('/srlevent CharmOff sender=%s', me)
+            end
 
         elseif subcmd == 'debuffon' then
             local targetId = mq.TLO.Target.ID() or 0

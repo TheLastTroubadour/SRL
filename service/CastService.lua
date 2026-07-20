@@ -8,6 +8,17 @@ local StringUtil = require 'util.StringUtil'
 local CastService = {}
 CastService.__index = CastService
 
+-- mq.delay() blocks the entire script (mainLoop, DecisionEngine, everything)
+-- until it resolves — only the delay's own condition callback keeps polling.
+-- So a job can't interrupt an in-flight cast by sitting in the queue (nothing
+-- can get enqueued while the script is frozen); instead we re-check live HP
+-- directly in that callback. A hard emergency floor (rather than a priority
+-- comparison) keeps this from firing on ordinary heal/buff contention — only
+-- a genuinely critical target crosses it — and the cooldown stops rapid
+-- chain-interrupting even if multiple people are critical at once.
+local EMERGENCY_HP_THRESHOLD = 20
+local INTERRUPT_COOLDOWN_MS  = 2000
+
 function CastService:new(scheduler, combatService)
     local self = setmetatable({}, CastService)
 
@@ -18,9 +29,39 @@ function CastService:new(scheduler, combatService)
     self.queuedKeys = {}
     self.currentlyInFlight = nil
     self.lockedGems = {}
+    self.lastInterruptAt = 0
     self:startWorker()
 
     return self
+end
+
+-- True if someone other than the current cast's own target has dropped to a
+-- genuinely critical HP% right now. Live TLO reads, so this stays accurate
+-- even while the rest of the script is frozen inside this same mq.delay.
+function CastService:emergencyInterruptNeeded(job)
+    if mq.gettime() - self.lastInterruptAt < INTERRUPT_COOLDOWN_MS then
+        return false
+    end
+
+    local function isCritical(id, hp)
+        return id and id ~= job.targetId and hp and hp <= EMERGENCY_HP_THRESHOLD
+    end
+
+    for i = 1, mq.TLO.Group.Members() do
+        local m = mq.TLO.Group.Member(i)
+        if m() and not m.Dead() and isCritical(m.ID(), m.PctHPs()) then
+            return true
+        end
+    end
+
+    for i = 1, (mq.TLO.Raid.Members() or 0) do
+        local r = mq.TLO.Raid.Member(i)
+        if r() and not r.Dead() and isCritical(r.Spawn.ID(), r.PctHPs()) then
+            return true
+        end
+    end
+
+    return false
 end
 
 function CastService:setBus(bus)
@@ -74,11 +115,17 @@ function CastService:startWorker()
 
                 -- Out of range
                 if job.type ~= 'ability' and job.type ~= 'disc' and job.type ~= 'item' and job.type ~= 'aa' then
-                    local range = mq.TLO.Spell(job.name).Range() or 0
-                    local spellDistance = tonumber(range) == 0 and mq.TLO.Spell(job.name).AERange() or range
-                    if spellDistance and tonumber(spellDistance) < tonumber(spawn.Distance()) then
+                    local spellRange
+                    if job.range then
+                        spellRange = tonumber(job.range)
+                    else
+                        local range   = tonumber(mq.TLO.Spell(job.name).Range())   or 0
+                        local aeRange = tonumber(mq.TLO.Spell(job.name).AERange()) or 0
+                        spellRange = range > 0 and range or aeRange
+                    end
+                    if spellRange > 0 and spellRange < tonumber(spawn.Distance()) then
                         print(string.format("Removing due to spell distance: %s | target: %s (id: %s) | dist: %.1f | range: %.1f",
-                            job.name, job.targetName, job.targetId, tonumber(spawn.Distance()), tonumber(spellDistance)))
+                            job.name, job.targetName, job.targetId, tonumber(spawn.Distance()), spellRange))
                         table.remove(self.queue, i)
                         goto continue
                     end
@@ -300,7 +347,7 @@ function CastService:castItem(job)
     if self.melodyService and mq.TLO.Me.Class.ShortName() == 'BRD' then
         resumeMelody = self.melodyService.active
         self.melodyService:stop()
-        mq.delay(100)
+        mq.delay(100, function() return not mq.TLO.Me.Casting() end)
     end
 
     mq.cmdf('/useitem "%s"', job.name)
@@ -397,6 +444,10 @@ function CastService:memSpellIfNeeded(job)
                 mq.delay(12000, function()
                     return mq.TLO.Me.Gem(job.name)() ~= nil
                 end)
+                if mq.TLO.Window("SpellBookWnd").Open() then
+                    mq.cmd('/book')
+                    mq.delay(2000, function() return not mq.TLO.Window("SpellBookWnd").Open() end)
+                end
                 self:unlockGem(gemNum)
             end
         end
@@ -427,7 +478,28 @@ function CastService:srlCast(job)
         local castTime = mq.TLO.Spell(job.name).CastTime.TotalSeconds() * 1000 + 1500
         mq.cmdf('/cast %s', gem)
         mq.delay(1000, function() return mq.TLO.Me.Casting() ~= nil end)
-        mq.delay(castTime, function() return not mq.TLO.Me.Casting() end)
+        -- Main loop is blocked during mq.delay, so broadcast casting status now
+        -- so the group overlay shows the spell name during the cast.
+        if self.bus then
+            self.bus.actor:broadcast('char_status', {
+                name      = mq.TLO.Me.Name() or '',
+                hp        = mq.TLO.Me.PctHPs() or 0,
+                mana      = mq.TLO.Me.PctMana() or 0,
+                endurance = mq.TLO.Me.PctEndurance() or 0,
+                target    = mq.TLO.Target.CleanName() or '',
+                casting   = mq.TLO.Me.Casting() or '',
+                dead      = mq.TLO.Me.Dead() == true,
+                zone      = mq.TLO.Zone.ShortName() or '',
+                class     = mq.TLO.Me.Class.ShortName() or '',
+            })
+        end
+        mq.delay(castTime, function()
+            return not mq.TLO.Me.Casting() or self:emergencyInterruptNeeded(job)
+        end)
+        if mq.TLO.Me.Casting() and self:emergencyInterruptNeeded(job) then
+            mq.cmd('/interrupt')
+            self.lastInterruptAt = mq.gettime()
+        end
     end
     Logging.Debug("Cast Util Export SRL Cast End")
 end

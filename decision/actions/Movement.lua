@@ -34,7 +34,8 @@ function MovementDecision:score(ctx)
         (State.assist.targetId ~= nil)
     )
     if hasActiveCombat then return 0 end
-    if ctx.casting or State.flags.castInFlight then return 0 end
+    local isBard = ctx.myClass == 'BRD'
+    if (ctx.casting or State.flags.castInFlight) and not isBard then return 0 end
     if not State.follow.active or not State.follow.followId then return 0 end
 
     local now = mq.gettime()

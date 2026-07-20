@@ -32,6 +32,11 @@ State.move = {
     targetId = nil,
 }
 
+-- ===== Charm State =====
+State.charm = {
+    petId = nil,
+}
+
 -- ===== Burn State =====
 State.burn = {
     active     = false,

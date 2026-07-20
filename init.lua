@@ -22,7 +22,6 @@ local GroupStatusWindow  = require 'window.GroupStatusWindow'
 local ConfigEditorWindow = require 'window.ConfigEditorWindow'
 local StatusService      = require 'service.StatusService'
 local State = require 'core.State'
-local HealService = require 'service.HealService'
 local TradeService = require 'service.TradeService'
 local TrustService = require 'service.TrustService'
 local RoleService = require 'service.RoleService'
@@ -50,6 +49,8 @@ local MedDecision           = require 'decision.actions.Med'
 local BerzerkerAxeDecision  = require 'decision.actions.BerzerkerAxe'
 local DotDecision           = require 'decision.actions.Dot'
 local MemSwapDecision       = require 'decision.actions.MemSwap'
+local CanniDecision         = require 'decision.actions.Canni'
+local CharmDecision         = require 'decision.actions.Charm'
 PackageMan.Require('lyaml')
 PackageMan.Require('luafilesystem', 'lfs')
 --needs to be after lyaml by packageman
@@ -374,7 +375,6 @@ local function mainLoop()
 
     local followService = FollowService:new()
     local followController = FollowController:new(followService, config)
-    local healService = HealService:new(castService, config)
     local debuffService = DebuffService:new(castService, config)
     combatService.debuffService = debuffService
 
@@ -388,12 +388,15 @@ local function mainLoop()
     local cureDecision = CureDecision:new(config)
     local melodyService = MelodyService:new(config)
     castService:setMelodyService(melodyService)
+    local hpBenchService = require('service.HpBenchService'):new()
 
     local resourceDecision = ResourceDecision:new(melodyService)
     local nukeDecision = NukeDecision:new(config)
     local assistDecision = AssistDecision:new()
     local healDecision = HealDecision:new(config)
     healDecision:setBus(busService)
+    healDecision:setCastService(castService)
+    local healBenchService = require('service.HealBenchService'):new(healDecision, castService)
     busService.actor:on('group_heal_cast', function(sender, data)
         local d = data and data.data
         if d and d.suppressMs then
@@ -419,6 +422,8 @@ local function mainLoop()
     local berzerkerAxeDecision = BerzerkerAxeDecision:new(config)
     local dotDecision          = DotDecision:new(config)
     local memSwapDecision      = MemSwapDecision:new(config, castService)
+    local canniDecision        = CanniDecision:new(config, castService)
+    local charmDecision        = CharmDecision:new(config)
     local context = Context:new(config)
 
     CommandRegistry:setup(CommandBus, {
@@ -442,6 +447,8 @@ local function mainLoop()
         configEditorWindow  = ConfigEditorWindow,
         resourceDecision    = resourceDecision,
         rezDecision         = rezDecision,
+        hpBenchService      = hpBenchService,
+        healBenchService    = healBenchService,
     }, config)
 
     local engine = DecisionEngine:new({
@@ -466,7 +473,9 @@ local function mainLoop()
         berzerkerAxeDecision,
         dotDecision,
         medDecision,
-        memSwapDecision
+        memSwapDecision,
+        canniDecision,
+        charmDecision
     })
 
     RunTime.engine = engine
@@ -550,6 +559,8 @@ local function mainLoop()
         cureService:update()
         melodyService:tick(ctx)
         burnService:tick()
+        hpBenchService:tick(ctx)
+        healBenchService:tick(ctx)
 
         -- Broadcast own status for the group status window
         local myStatus = {

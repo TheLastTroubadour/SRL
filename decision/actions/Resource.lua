@@ -13,8 +13,18 @@ function ResourceDecision:new(melodyService)
     self.name = "ResourceDecision"
     self.melodyService = melodyService
     self.suppressUntil = 0
+    self.forceFull = false
 
     return self
+end
+
+function ResourceDecision:setForceFull()
+    self.forceFull = true
+    self.active = true
+end
+
+function ResourceDecision:clearForceFull()
+    self.forceFull = false
 end
 
 function ResourceDecision:suppressFor(seconds)
@@ -37,7 +47,7 @@ function ResourceDecision:score(ctx)
     local inCombat = (ctx.numberOfAggresiveInXTar and ctx.numberOfAggresiveInXTar > 0)
                   or (ctx.assist.Id ~= nil and not State.flags.isPuller)
 
-    if inCombat then
+    if inCombat and not self.forceFull then
         if self.active and mq.TLO.Me.Sitting() then
             mq.cmd('/stand')
         end
@@ -65,6 +75,7 @@ function ResourceDecision:score(ctx)
 
     if self.active and full then
         self.active = false
+        self.forceFull = false
         if ctx.myClass == 'BRD' and self.melodyService then
             self.melodyService:resume()
         end
@@ -73,7 +84,11 @@ function ResourceDecision:score(ctx)
     end
 
     if self.active then
-        return 90
+        return self.forceFull and 150 or 90
+    end
+
+    if self.forceFull then
+        return 150
     end
 
     if low then

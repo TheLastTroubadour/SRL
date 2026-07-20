@@ -203,7 +203,9 @@ function CombatService:assist()
     TargetService:getTargetById(targetId)
 
     mq.cmdf('/stick %s %s moveback uw', self.stickPoint, self.stickDist)
-    mq.delay(50)
+    if mq.TLO.Target.ID() ~= tonumber(targetId) then
+        mq.delay(50, function() return mq.TLO.Target.ID() == tonumber(targetId) end)
+    end
     mq.cmd('/attack on')
 end
 

@@ -66,7 +66,7 @@ function CCDecision:score(ctx)
     if not self.config:get('CrowdControl.Enabled') then return 0 end
 
     -- Check result of previous mez cast once casting finishes
-    if self.waitingForResult and not ctx.casting then
+    if self.waitingForResult and (not ctx.casting or ctx.roles['bard']) then
         mq.doevents('CCImmune')
         for _, id in ipairs(self.lastCastTargets) do
             local spawn = mq.TLO.Spawn('id ' .. id)
@@ -78,7 +78,7 @@ function CCDecision:score(ctx)
         self.waitingForResult = false
     end
 
-    if ctx.casting then return 0 end
+    if ctx.casting and not ctx.roles['bard'] then return 0 end
 
     local now = mq.gettime()
     self:verifyMezzedTargets()
@@ -228,13 +228,15 @@ function CCDecision:findAeMezOpportunity(ctx)
         for _, centerId in ipairs(unmezzed) do
             local centerLevel = mq.TLO.Spawn('id ' .. centerId).Level() or 0
             if aeSpell.maxLevel and centerLevel > aeSpell.maxLevel then goto nextCenter end
+            if aeSpell.minLevel and centerLevel < aeSpell.minLevel then goto nextCenter end
             local hits = self:getTargetsInRange(centerId, unmezzed, aeRange)
-            -- filter hits by maxLevel too
-            if aeSpell.maxLevel then
+            -- filter hits by minLevel/maxLevel too
+            if aeSpell.maxLevel or aeSpell.minLevel then
                 local filtered = {}
                 for _, id in ipairs(hits) do
                     local lvl = mq.TLO.Spawn('id ' .. id).Level() or 0
-                    if lvl <= aeSpell.maxLevel then
+                    if (not aeSpell.maxLevel or lvl <= aeSpell.maxLevel)
+                        and (not aeSpell.minLevel or lvl >= aeSpell.minLevel) then
                         table.insert(filtered, id)
                     end
                 end
@@ -333,6 +335,7 @@ function CCDecision:findReadySingleSpell(targetId)
             local resolved = SpellUtil.resolveRank(spell.spell, 'spell')
             if mq.TLO.Me.SpellReady(resolved)()
                 and (not spell.maxLevel or not targetLevel or targetLevel <= spell.maxLevel)
+                and (not spell.minLevel or not targetLevel or targetLevel >= spell.minLevel)
             then
                 spell._resolved = resolved
                 return spell

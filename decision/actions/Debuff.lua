@@ -8,6 +8,8 @@ DebuffDecision.__index = DebuffDecision
 local IMMUNE_BACKOFF_MS = 3600000  -- 1 hour; effectively skip for the session
 local NOSLOW_FILE = 'config/srl/noslow.txt'
 
+local RESIST_RETRY_MS = 3000  -- retry 3 seconds after a resist
+
 function DebuffDecision:new(config)
     local self = setmetatable({}, DebuffDecision)
     self.name = "DebuffDecision"
@@ -19,6 +21,14 @@ function DebuffDecision:new(config)
     self.noSlowIds     = {}   -- [spawnId] = true
     self.noSlowNames   = {}   -- [name:lower()] = true
     self:loadNoSlowFile()
+
+    mq.event('DebuffResisted', '#*#resisted your#*#', function()
+        if self.lastCastKey then
+            self.retryTimer[self.lastCastKey] = mq.gettime() + RESIST_RETRY_MS
+            self.lastCastKey = nil
+        end
+    end)
+
     return self
 end
 
@@ -79,6 +89,10 @@ function DebuffDecision:score(ctx)
     self.pendingTarget = nil
     self.pendingDebuff = nil
 
+    if not ctx.casting then
+        mq.doevents('DebuffResisted')
+    end
+
     if ctx.casting then return 0 end
     if not ctx.roles['debuff'] then return 0 end
     if not ctx.self.debuff then return 0 end
@@ -118,6 +132,7 @@ function DebuffDecision:score(ctx)
             local xt = mq.TLO.Me.XTarget(i)
             if xt() and xt.Type() == "NPC" and not xt.Dead() and xt.Aggressive()
                     and xt.ID() ~= tonumber(ctx.assist.Id)
+                    and xt.ID() ~= State.charm.petId
                     and xt.LineOfSight() then
                 if self:findDebuff(ctx.self.debuff.xTarSpells, xt.ID()) then
                     return self.pendingDebuff.priority and 115 or 82

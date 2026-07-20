@@ -24,7 +24,8 @@ end
 -- rt fields used:
 --   combatController, followController, followService, castService,
 --   combatService, burnService, melodyService, cureDecision,
---   nukeDecision, context, ccDecision, memSwapDecision, debugState { visible }
+--   nukeDecision, context, ccDecision, memSwapDecision, debugState { visible },
+--   hpBenchService, healBenchService
 -- ---------------------------------------------------------------------------
 
 local function hasMana()
@@ -59,6 +60,7 @@ function CommandRegistry:setup(commandBus, rt, config)
     commandBus:register('Stop', function()
         rt.followController:stop()
         rt.castService:clearCombatQueue()
+        if rt.melodyService then rt.melodyService.lastSongTime = mq.gettime() end
     end)
 
     commandBus:register('Move', function(payload)
@@ -276,16 +278,24 @@ function CommandRegistry:setup(commandBus, rt, config)
 
     commandBus:register('MedOn', function()
         State:setMedMode(true)
+        rt.resourceDecision:clearForceFull()
         if rt.melodyService then rt.melodyService:suspend() end
         mq.cmd('/sit')
     end)
 
     commandBus:register('MedOff', function()
         State:setMedMode(false)
+        rt.resourceDecision:clearForceFull()
         if not (State.flags.isPuller and mq.TLO.Me.Feigning()) then
             mq.cmd('/stand')
         end
         if rt.melodyService then rt.melodyService:resume() end
+    end)
+
+    commandBus:register('MedFull', function()
+        rt.resourceDecision:setForceFull()
+        if rt.melodyService then rt.melodyService:suspend() end
+        mq.cmd('/sit')
     end)
 
     commandBus:register('ResourceOff', function()
@@ -870,6 +880,50 @@ function CommandRegistry:setup(commandBus, rt, config)
         end
     end)
 
+    commandBus:register('CharmOn', function(payload)
+        local npcId = tonumber(payload.id)
+        if not npcId or npcId == 0 then return end
+        local spawn = mq.TLO.Spawn('id ' .. npcId)
+        if not spawn() then return end
+
+        local spellName = config:get('Charm.Spell')
+        local gem       = tonumber(config:get('Charm.Gem'))
+        if not spellName or not gem then
+            print('[SRL] CharmOn: no Charm.Spell / Charm.Gem configured')
+            return
+        end
+
+        State.charm.petId = npcId
+
+        -- Notify all bots so they skip XTar debuffs on this mob
+        mq.cmdf('/dgae /srlevent CharmPetSet id=%d sender=%s', npcId, mq.TLO.Me.Name())
+
+        rt.castService.scheduler:spawn(function()
+            Target:getTargetById(npcId)
+            mq.delay(200)
+            if mq.TLO.Target.ID() ~= npcId then return end
+            mq.cmdf('/cast %d', gem)
+            mq.delay(3000, function() return not mq.TLO.Me.Casting() end)
+        end)
+
+        print(string.format('[SRL] Charming id=%d with %s (gem %d)', npcId, spellName, gem))
+    end)
+
+    commandBus:register('CharmOff', function()
+        local petId = State.charm.petId
+        State.charm.petId = nil
+        if petId then
+            mq.cmdf('/dgae /srlevent CharmPetSet id=0 sender=%s', mq.TLO.Me.Name())
+        end
+        print('[SRL] Charm cleared')
+    end)
+
+    -- Received by ALL bots — tracks which NPC is a charm pet so XTar debuffs skip it
+    commandBus:register('CharmPetSet', function(payload)
+        local id = tonumber(payload.id) or 0
+        State.charm.petId = id ~= 0 and id or nil
+    end)
+
     commandBus:register('DebuffOn', function(payload)
         local id = tonumber(payload.id)
         if not id or id == 0 then return end
@@ -892,6 +946,22 @@ function CommandRegistry:setup(commandBus, rt, config)
     commandBus:register('DotOff', function()
         State.flags.commandDotTargetId = nil
         print('[SRL] Command dot: cleared')
+    end)
+
+    commandBus:register('BenchHpsStart', function()
+        if rt.hpBenchService then rt.hpBenchService:start() end
+    end)
+
+    commandBus:register('BenchHpsStop', function()
+        if rt.hpBenchService then rt.hpBenchService:stop() end
+    end)
+
+    commandBus:register('HealBenchStart', function()
+        if rt.healBenchService then rt.healBenchService:start() end
+    end)
+
+    commandBus:register('HealBenchStop', function()
+        if rt.healBenchService then rt.healBenchService:stop() end
     end)
 
     commandBus:register('COMBAT_ENDED', function()

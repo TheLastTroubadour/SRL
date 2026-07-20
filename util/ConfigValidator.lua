@@ -140,6 +140,84 @@ function ConfigValidator.run(config)
         recordIfBad(mount, 'item', ok)
     end
 
+    -- Jolts
+    checkList('Jolts.Main', config:get('Jolts.Main'), 'spell', 'type')
+
+    -- Debuffs (Main sets)
+    for _, section in ipairs({ 'Debuff.DebuffOnAssist.Main', 'Debuff.DebuffOnCommand.Main', 'Debuff.DebuffOnXTar.Main' }) do
+        checkList(section, config:get(section), 'spell', 'type')
+    end
+
+    -- DoTs (Main sets)
+    for _, section in ipairs({ 'Dots.DotsOnAssist.Main', 'Dots.DotsOnCommand.Main' }) do
+        checkList(section, config:get(section), 'spell', 'type')
+    end
+
+    -- Crowd Control
+    checkList('CrowdControl.Spells', config:get('CrowdControl.Spells'), 'spell', 'type')
+
+    -- AE spells
+    checkList('AE.Spells', config:get('AE.Spells'), 'name', 'type')
+
+    -- Taunt
+    checkList('Taunt.Abilities', config:get('Taunt.Abilities'), 'name', 'type')
+
+    -- Heals
+    local function checkHealRoles(section)
+        local roles = config:get(section)
+        if not roles then return end
+        for role, spells in pairs(roles) do
+            if type(spells) == 'table' then
+                for _, entry in ipairs(spells) do
+                    if entry.spell then
+                        local ok = checkEntry(section .. '.' .. role, entry.spell, 'spell')
+                        recordIfBad(entry.spell, 'spell', ok)
+                    end
+                end
+            end
+        end
+    end
+    checkHealRoles('Heals.Spells')
+    checkHealRoles('Heals.HoTSpells')
+    checkHealRoles('Heals.PromisedSpells')
+    local groupSpell = config:get('Heals.GroupSpell')
+    if groupSpell and groupSpell.spell then
+        local ok = checkEntry('Heals.GroupSpell', groupSpell.spell, 'spell')
+        recordIfBad(groupSpell.spell, 'spell', ok)
+    end
+
+    -- Cures
+    local cures = config:get('Cures.Spells')
+    if cures then
+        for _, entry in ipairs(cures) do
+            local t = entry.spelltype or 'spell'
+            local ok = checkEntry('Cures.Spells', entry.name, t)
+            recordIfBad(entry.name, t, ok)
+        end
+    end
+
+    -- GiftOfMana
+    local gom = config:get('GiftOfMana')
+    if gom and gom.spell then
+        local ok = checkEntry('GiftOfMana', gom.spell, 'spell')
+        recordIfBad(gom.spell, 'spell', ok)
+    end
+
+    -- Shrink
+    local shrink = config:get('UseItems.Shrink')
+    if shrink and shrink.spell then
+        local ok = checkEntry('UseItems.Shrink', shrink.spell, shrink.type or 'spell')
+        recordIfBad(shrink.spell, shrink.type or 'spell', ok)
+    end
+
+    -- Shaman Canni
+    local canniSpell = config:get('Shaman.CanniSpells.CanniSpell')
+    local canniType  = config:get('Shaman.CanniSpells.CanniType') or 'spell'
+    if canniSpell and canniSpell ~= '' then
+        local ok = checkEntry('Shaman.CanniSpells', canniSpell, canniType)
+        recordIfBad(canniSpell, canniType, ok)
+    end
+
     mq.cmdf('/dgt all [SRL Validate] Done for %s.', me)
 end
 

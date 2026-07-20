@@ -16,7 +16,9 @@ function HealDecision:new(config)
     self.job = nil
     self.groupHealPending = false
     self.bus = nil
+    self.castService = nil
     self.healCooldown = {}
+    self.hpHistory = {}
 
     return self
 end
@@ -25,15 +27,61 @@ function HealDecision:setBus(bus)
     self.bus = bus
 end
 
+function HealDecision:setCastService(cs)
+    self.castService = cs
+end
+
 function HealDecision:suppressGroupHeal(ms)
     self.groupHealLock = mq.gettime() + ms
+end
+
+local HP_HISTORY_WINDOW_MS  = 6000  -- how far back we keep samples
+local HP_HISTORY_MIN_GAP_MS = 500   -- don't sample faster than this (kills tick noise)
+
+function HealDecision:recordHpSample(id, hp, now)
+    local hist = self.hpHistory[id]
+    if not hist then
+        hist = {}
+        self.hpHistory[id] = hist
+    end
+
+    local last = hist[#hist]
+    if last and (now - last.t) < HP_HISTORY_MIN_GAP_MS then return end
+
+    table.insert(hist, { hp = hp, t = now })
+
+    while hist[1] and (now - hist[1].t) > HP_HISTORY_WINDOW_MS do
+        table.remove(hist, 1)
+    end
+end
+
+-- %HP lost per second, positive = losing HP. Stable/healing targets return 0
+-- so callers fall back to the live snapshot instead of projecting downward.
+function HealDecision:getHpVelocity(id)
+    local hist = self.hpHistory[id]
+    if not hist or #hist < 2 then return 0 end
+
+    local oldest, newest = hist[1], hist[#hist]
+    local dt = newest.t - oldest.t
+    if dt <= 0 then return 0 end
+
+    local velocity = (oldest.hp - newest.hp) / (dt / 1000)
+    return velocity > 0 and velocity or 0
+end
+
+-- Where this target's HP will be by the time a heal actually lands, not
+-- where it is right now — a human healer reacts to the trend, not the frame.
+function HealDecision:getProjectedHp(t, lookaheadMs)
+    local velocity = self:getHpVelocity(t.id)
+    if velocity <= 0 then return t.hp end
+    local projected = t.hp - (velocity * (lookaheadMs / 1000))
+    return projected < 0 and 0 or projected
 end
 
 function HealDecision:score(ctx)
     self.job = nil
     self.groupHealPending = false
 
-    if ctx.casting then return 0 end
     if not ctx.roles[HEALER_ROLE] then return 0 end
 
     local targets = ctx.self.heal.group.memberStatus
@@ -50,6 +98,8 @@ function HealDecision:score(ctx)
     local now = mq.gettime()
     local bestTarget, bestHeal, bestScore = nil, nil, 0
 
+    local DEFAULT_LOOKAHEAD_MS = 2000 -- rough guess until a candidate heal's real cast time is known
+
     for _, t in ipairs(targets) do
         if not t.hp then goto continue end
 
@@ -57,17 +107,45 @@ function HealDecision:score(ctx)
             goto continue
         end
 
-        local weight = t.role == 'tank' and 2 or (t.role == 'important' and 1.5 or 1)
-        local score  = (100 - t.hp) * weight
+        -- Trend-tracking is a tank thing: they eat sustained, repeated damage
+        -- and the trend genuinely predicts more incoming. DPS just take an
+        -- occasional single dip — feeding that through velocity/projection
+        -- would just react to noise, so they stay on the plain snapshot.
+        local projectedHp = t.hp
+        if t.role == 'tank' then
+            self:recordHpSample(t.id, t.hp, now)
+            projectedHp = self:getProjectedHp(t, DEFAULT_LOOKAHEAD_MS)
+        end
+
+        local weight    = t.role == 'tank' and 2 or (t.role == 'important' and 1.5 or 1)
+        local inGroupMult = (t.inGroup == false) and 0.8 or 1
+        local score     = (100 - projectedHp) * weight * inGroupMult
 
         if score > bestScore then
-            local heal = self:selectHealSpell(t, ctx.self.heal.spells)
+            local heal = self:selectHealSpell(t, ctx.self.heal.spells, projectedHp)
             if heal then
                 -- Lazy-resolve rank once; same pattern as HoTDecision
                 if not heal._rspell then
                     heal._rspell = SpellUtil.resolveRank(heal.spell, 'spell')
                 end
-                local rspell        = heal._rspell or heal.spell
+                local rspell = heal._rspell or heal.spell
+
+                -- Re-project using this spell's actual cast time — if the target
+                -- is falling fast enough that they'll still be under threshold
+                -- when THIS heal lands, see if a bigger tier now applies.
+                local realCastMs = (mq.TLO.Spell(rspell).CastTime.TotalSeconds() or 0) * 1000
+                if realCastMs > 0 then
+                    local refinedHp = self:getProjectedHp(t, realCastMs)
+                    local escalated = self:selectHealSpell(t, ctx.self.heal.spells, refinedHp)
+                    if escalated and escalated ~= heal then
+                        heal = escalated
+                        if not heal._rspell then
+                            heal._rspell = SpellUtil.resolveRank(heal.spell, 'spell')
+                        end
+                        rspell = heal._rspell or heal.spell
+                    end
+                end
+
                 local spell         = mq.TLO.Spell(rspell)
                 local spellManaCost = spell.Mana() or 0
                 local spellRange    = tonumber(spell.Range()) or 200
@@ -99,9 +177,9 @@ function HealDecision:score(ctx)
         return 105
     end
 
-    -- Top-off: heal anyone below threshold when nothing urgent is needed
+    -- Top-off: heal anyone below threshold when nothing urgent is needed (out of combat only)
     local topOff = self.config:get('Heals.TopOff')
-    if topOff and topOff.spell then
+    if topOff and topOff.spell and ctx.numberOfAggresiveInXTar == 0 then
         if not topOff._rspell then
             topOff._rspell = SpellUtil.resolveRank(topOff.spell, 'spell')
         end
@@ -126,31 +204,27 @@ end
 
 function HealDecision:execute(ctx)
     if not self.job then return end
+    if not self.castService then return end
+    if self.castService:isQueued(self.job) then return end
 
-    if mq.TLO.Target.ID() ~= self.job.targetId then
-        Target:getTargetById(self.job.targetId)
-    end
-
-    local gem = mq.TLO.Me.Gem(self.job.name)() or self.job.gem
-    if not gem then return end
-    mq.cmd('/stick off')
-    mq.cmd('/nav stop')
-    mq.cmdf('/cast %s', gem)
-
-    -- Suppress non-tank targets until the heal lands (cast time + 2s travel buffer)
+    -- Set cooldown immediately to prevent re-queueing same target every tick
     if self.job.targetRole ~= 'tank' then
         local castMs = (mq.TLO.Spell(self.job.name).CastTime.TotalSeconds() or 0) * 1000
         self.healCooldown[self.job.targetId] = mq.gettime() + castMs + 2000
     end
 
-    local suppressMs = 8000
-    self.groupHealLock = mq.gettime() + suppressMs
-    if self.groupHealPending and self.bus then
-        self.bus.actor:broadcast('group_heal_cast', {
-            casterName = mq.TLO.Me.Name(),
-            suppressMs = tostring(suppressMs),
-        })
+    if self.groupHealPending then
+        local suppressMs = 8000
+        self.groupHealLock = mq.gettime() + suppressMs
+        if self.bus then
+            self.bus.actor:broadcast('group_heal_cast', {
+                casterName = mq.TLO.Me.Name(),
+                suppressMs = tostring(suppressMs),
+            })
+        end
     end
+
+    self.castService:enqueue(self.job)
 end
 
 function HealDecision:checkGroupHeal(targets)
@@ -261,7 +335,7 @@ function HealDecision:getRole(name)
     return "normal"
 end
 
-function HealDecision:selectHealSpell(target, healSpells)
+function HealDecision:selectHealSpell(target, healSpells, hpOverride)
 
     local spells = healSpells[target.role]
 
@@ -271,11 +345,12 @@ function HealDecision:selectHealSpell(target, healSpells)
 
     if not spells then return nil end
 
+    local hp = hpOverride or target.hp
     local chosen = nil
 
     for _,heal in ipairs(spells) do
 
-        if target.hp and target.hp <= heal.threshold then
+        if hp and hp <= heal.threshold then
 
             if not chosen or heal.threshold < chosen.threshold then
                 chosen = heal

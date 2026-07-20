@@ -83,6 +83,10 @@ function MemSwapDecision:execute(ctx)
             mq.delay(15000, function()
                 return mq.TLO.Me.Gem(entry.gem)() == entry.name
             end)
+            if mq.TLO.Window("SpellBookWnd").Open() then
+                mq.cmd('/book')
+                mq.delay(2000, function() return not mq.TLO.Window("SpellBookWnd").Open() end)
+            end
             self.castService:unlockGem(entry.gem)
         end
     end
