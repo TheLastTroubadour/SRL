@@ -91,6 +91,8 @@ function ShrinkDecision:getRange(entry)
     local spellName
     if entryType == 'item' then
         spellName = mq.TLO.FindItem('=' .. entry.name).Clicky.Spell.Name()
+    elseif entryType == 'aa' then
+        spellName = mq.TLO.Me.AltAbility(entry.name).Spell.Name()
     else
         spellName = entry.name
     end

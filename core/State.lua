@@ -43,17 +43,33 @@ State.burn = {
     generation = 0,
 }
 
+-- ===== Pull State =====
+State.pull = {
+    camp = nil,   -- { x=, y=, z= } via /srl setcamp. In-memory only, resets on restart.
+}
+
+function State:setCamp(x, y, z)
+    self.pull.camp = { x = x, y = y, z = z }
+end
+
+function State:clearCamp()
+    self.pull.camp = nil
+end
+
 -- ===== Spell Set =====
 State.spellSet = 'Main'
 
 -- ===== Local Toggles =====
 State.flags = {
     paused                = false,
-    isPuller              = false,
+    automode              = nil,   -- nil = off, else 'puller' | 'tank' | 'assist'
     aeEnabled             = false,
     expMode               = false,
     medDisabled           = false,
     buffDisabled          = false,
+    curesDisabled         = false,
+    epicDisabled          = false,
+    groupHealDisabled     = false,
     commandDebuffTargetId = nil,
     commandDotTargetId    = nil,
     castInFlight          = false,

@@ -190,7 +190,7 @@ function HoTDecision:execute(ctx)
         local gem = mq.TLO.Me.Gem(name)() or entry.gem
         if not gem then return end
         mq.cmd('/stick off')
-        mq.cmd('/nav stop')
+        if mq.TLO.Navigation.Active() then mq.cmd('/nav stop') end
         mq.cmdf('/cast %s', gem)
     elseif t == 'aa' then
         mq.cmdf('/alt activate "%s"', name)

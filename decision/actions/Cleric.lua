@@ -1,5 +1,6 @@
 local mq = require 'mq'
 local Target = require 'service.TargetService'
+local State = require 'core.State'
 
 -- Handles CLR emergency equalization abilities:
 --   Divine Arbitration (AA)  - equalizes HP across the group
@@ -38,7 +39,7 @@ function ClericDecision:score(ctx)
     -- Epic first: it equalizes AND cures, making it the stronger save
     local epicName      = self.config:get('Cleric.EpicName')
     local epicThreshold = self.config:get('Cleric.EpicPct') or 35
-    if type(epicName) == 'string' and epicName ~= '' and target.hp <= epicThreshold then
+    if not State.flags.epicDisabled and type(epicName) == 'string' and epicName ~= '' and target.hp <= epicThreshold then
         if mq.TLO.FindItem('=' .. epicName)() then
             self.pendingAction = { type = 'epic', name = epicName, targetId = target.id }
             return 108

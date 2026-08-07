@@ -1,6 +1,7 @@
-local mq    = require 'mq'
-local State = require 'core.State'
-local Help  = require 'core.Help'
+local mq         = require 'mq'
+local State      = require 'core.State'
+local Help       = require 'core.Help'
+local AssistUtil = require 'util.AssistUtil'
 
 local CommandBus = {}
 CommandBus.handlers = {}
@@ -15,6 +16,9 @@ local ARMOR_TYPES = {
     healers = { CLR=true, DRU=true, SHM=true },
     casters = { WIZ=true, MAG=true, NEC=true, ENC=true },
 }
+
+-- Valid /srl automode <role> values
+local VALID_AUTOMODES = { puller = true, tank = true, assist = true }
 
 -- Build "key=val key=val ..." string from a list of raw arg tokens,
 -- excluding any keys in the skip set (those are set by the bind itself).
@@ -122,9 +126,21 @@ function CommandBus:init()
 
         -- Combat
         if subcmd == 'assiston' then
+            -- Only restricted once opted into automode at all -- automode off
+            -- (never touched /srl automode) can still call assist freely; once
+            -- in automode, only tank/puller (not assist) are allowed to.
+            if State.flags.automode and State.flags.automode ~= 'tank' and State.flags.automode ~= 'puller' then
+                print('[SRL] assiston: automode is "' .. State.flags.automode
+                    .. '" -- only tank/puller automode can call assist')
+                return
+            end
+            local targetId = mq.TLO.Target.ID()
+            if not targetId or targetId == 0 then
+                print('[SRL] assiston: no target selected')
+                return
+            end
             local xtra = buildExtra(args, { sender=true, id=true, generation=true })
-            mq.cmdf('/dgze /srlevent Assist id=%s generation=%s sender=%s%s',
-                mq.TLO.Target.ID(), State.assist.generation + 1, me, xtra)
+            AssistUtil.broadcastAssist(targetId, xtra)
 
         elseif subcmd == 'backoff' then
             broadcast('BackOff', extra)
@@ -154,6 +170,20 @@ function CommandBus:init()
             local xtra = buildExtra(args, { sender=true, id=true })
             mq.cmdf('/dgze /srlevent MoveToTarget id=%s sender=%s%s',
                 mq.TLO.Target.ID(), me, xtra)
+
+        -- Save currently memmed gems (or specific gem numbers) to a named GemSwap set in YAML
+        elseif subcmd == 'gemswap' then
+            local setName = args[1]
+            if not setName or setName == '' then
+                print('[SRL] Usage: /srl gemswap <SetName> [gem gem ...]  (no gems = capture all)')
+                return
+            end
+            local gems = {}
+            for i = 2, #args do
+                local n = tonumber(args[i])
+                if n then table.insert(gems, tostring(n)) end
+            end
+            mq.cmdf('/srlevent GemSwapSave set=%s gems=%s sender=%s', setName, table.concat(gems, ','), me)
 
         -- Save currently equipped weapons to a named set in YAML
         elseif subcmd == 'saveweaponset' then
@@ -240,6 +270,30 @@ function CommandBus:init()
         elseif subcmd == 'buffoff' then
             mq.cmdf('/dgze /srlevent BuffOff sender=%s%s', me, extra)
             mq.cmdf('/srlevent BuffOff sender=%s%s', me, extra)
+
+        elseif subcmd == 'cureson' then
+            mq.cmdf('/dgze /srlevent CuresOn sender=%s%s', me, extra)
+            mq.cmdf('/srlevent CuresOn sender=%s%s', me, extra)
+
+        elseif subcmd == 'curesoff' then
+            mq.cmdf('/dgze /srlevent CuresOff sender=%s%s', me, extra)
+            mq.cmdf('/srlevent CuresOff sender=%s%s', me, extra)
+
+        elseif subcmd == 'epicon' then
+            mq.cmdf('/dgze /srlevent EpicOn sender=%s%s', me, extra)
+            mq.cmdf('/srlevent EpicOn sender=%s%s', me, extra)
+
+        elseif subcmd == 'epicoff' then
+            mq.cmdf('/dgze /srlevent EpicOff sender=%s%s', me, extra)
+            mq.cmdf('/srlevent EpicOff sender=%s%s', me, extra)
+
+        elseif subcmd == 'grouphealon' then
+            mq.cmdf('/dgze /srlevent GroupHealOn sender=%s%s', me, extra)
+            mq.cmdf('/srlevent GroupHealOn sender=%s%s', me, extra)
+
+        elseif subcmd == 'grouphealoff' then
+            mq.cmdf('/dgze /srlevent GroupHealOff sender=%s%s', me, extra)
+            mq.cmdf('/srlevent GroupHealOff sender=%s%s', me, extra)
 
         elseif subcmd == 'moveon' then
             local seconds = args[1] or '60'
@@ -389,6 +443,12 @@ function CommandBus:init()
             mq.cmdf('/dgae /srlevent SayPhrase id=%s msg=%s sender=%s%s',
                 mq.TLO.Target.ID(), phrase:gsub(' ', '_'), me, xtra)
 
+        elseif subcmd == 'hail' then
+            if not mq.TLO.Target() then return end
+            local xtra = buildExtra(args, { sender=true, id=true })
+            mq.cmdf('/dgae /srlevent Hail id=%s sender=%s%s',
+                mq.TLO.Target.ID(), me, xtra)
+
         -- Config / admin
         elseif subcmd == 'respawn' then
             mq.cmdf('/dgze /srlevent Respawn sender=%s%s', me, extra)
@@ -509,9 +569,36 @@ function CommandBus:init()
             mq.cmdf('/srlevent RezTarget id=%s name=%s', targetId, nameArg)
             print(string.format('[SRL] rez: requesting rez for %s (id %s)', charName, targetId))
 
-        elseif subcmd == 'puller' then
-            State.flags.isPuller = not State.flags.isPuller
-            print(string.format('[SRL] Puller mode: %s', State.flags.isPuller and 'ON' or 'OFF'))
+        elseif subcmd == 'automode' then
+            local role = args[1] and args[1]:lower()
+            if not role or role == '' then
+                print(string.format('[SRL] Usage: /srl automode <puller|tank|assist>|off  (current: %s)',
+                    State.flags.automode or 'off'))
+                return
+            end
+            if role == 'off' or role == 'none' then
+                State.flags.automode = nil
+            elseif not VALID_AUTOMODES[role] then
+                print(string.format('[SRL] Unknown automode "%s". Valid: puller, tank, assist, off', role))
+                return
+            elseif State.flags.automode == role then
+                State.flags.automode = nil
+            else
+                State.flags.automode = role
+            end
+            print(string.format('[SRL] Automode: %s', State.flags.automode or 'OFF'))
+
+        elseif subcmd == 'setcamp' then
+            local me = mq.TLO.Me
+            local x, y, z = me.X(), me.Y(), me.Z()
+            State:setCamp(x, y, z)
+            mq.cmdf('/dgze /srlevent Camp x=%.2f y=%.2f z=%.2f sender=%s', x, y, z, me.Name())
+            print(string.format('[SRL] Camp set at %.1f, %.1f, %.1f (broadcast to raid)', x, y, z))
+
+        elseif subcmd == 'clearcamp' then
+            State:clearCamp()
+            mq.cmdf('/dgze /srlevent ClearCamp sender=%s', me)
+            print('[SRL] Camp cleared (broadcast to raid)')
 
         elseif subcmd == 'count' then
             local peerString = mq.TLO.DanNet.Peers() or ''
@@ -542,18 +629,6 @@ function CommandBus:init()
 
         elseif subcmd == 'help' then
             Help.show(args[1] and args[1]:lower() or 'topics')
-
-        elseif subcmd == 'restart' then
-            -- Schedule self restart before stopping (timed persists after lua stops)
-            mq.cmd('/timed 30 /lua run srl')
-            -- Stop all peers
-            mq.cmdf('/dgae /lua stop srl')
-            -- Give peers 2 seconds to fully stop before telling them to start
-            mq.delay(2000)
-            -- Start peers (self timed restart already queued)
-            mq.cmdf('/dgae /lua run srl')
-            -- Stop self last
-            mq.cmd('/lua stop srl')
 
         else
             print('[SRL] Unknown command: ' .. subcmd)

@@ -94,7 +94,7 @@ function NukeDecision:execute(ctx)
     end
 
     mq.cmd("/stick off")
-    mq.cmd('/nav stop')
+    if mq.TLO.Navigation.Active() then mq.cmd('/nav stop') end
     local gem = mq.TLO.Me.Gem(self.nuke.name)() or self.nuke.gem
     if not gem then return end
     mq.cmdf('/cast %s', gem)

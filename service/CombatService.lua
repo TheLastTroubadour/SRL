@@ -75,7 +75,7 @@ function CombatService:handleMed()
     local medEnd = self.config:get('General.medStop') or 100
 
     -- never med during combat (pullers keep medding until they actually engage)
-    if State.assist.targetId and not State.flags.isPuller then
+    if State.assist.targetId and State.flags.automode ~= 'puller' then
         if mq.TLO.Me.Sitting() then
             mq.cmd("/stand")
         end
@@ -83,7 +83,7 @@ function CombatService:handleMed()
     end
 
     -- puller is FD — don't sit/stand, just bail
-    if State.flags.isPuller and mq.TLO.Me.Feigning() then
+    if State.flags.automode == 'puller' and mq.TLO.Me.Feigning() then
         return
     end
 

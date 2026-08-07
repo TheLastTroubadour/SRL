@@ -115,7 +115,7 @@ function DotDecision:execute(ctx)
         self.retryTimer[k] = mq.gettime() + math.max((duration * 1000) - 18000, 30000)
 
         mq.cmd('/stick off')
-        mq.cmd('/nav stop')
+        if mq.TLO.Navigation.Active() then mq.cmd('/nav stop') end
         local gem = mq.TLO.Me.Gem(dot.spell)() or dot.gem
         if not gem then return end
         mq.cmdf('/cast %s', gem)

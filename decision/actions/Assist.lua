@@ -4,6 +4,16 @@ local State  = require 'core.State'
 local AssistDecision = {}
 AssistDecision.__index = AssistDecision
 
+local KNOCKBACK_BUFFER = 20 -- yards beyond stick distance before we treat it as a knockback
+
+local function resolveStickDist(ctx)
+    local dist = ctx.assist.stickDistance
+    if tostring(dist):lower() == 'maxmelee' then
+        return (mq.TLO.Target.MaxMeleeTo() or 15) - 1
+    end
+    return tonumber(dist) or 10
+end
+
 
 function AssistDecision:new()
     local self = setmetatable({}, AssistDecision)
@@ -33,7 +43,7 @@ function AssistDecision:score(ctx)
     end
 
     -- Never assist (attack/stick) while FD — would cause puller to stand up
-    if State.flags.isPuller and mq.TLO.Me.Feigning() then
+    if State.flags.automode == 'puller' and mq.TLO.Me.Feigning() then
         return 0
     end
 
@@ -69,6 +79,12 @@ function AssistDecision:score(ctx)
         return 90
     end
 
+    -- Knocked back -- Stick still reports active but we're well past our intended
+    -- distance (mob push/knockback effects can leave /stick unable to catch up on its own)
+    if ctx.assist.distance and ctx.assist.distance > resolveStickDist(ctx) + KNOCKBACK_BUFFER then
+        return 90
+    end
+
     -- Track whether this mob has fought back; re-engage if combat drops after it was established
     if ctx.inCombat then
         self.engagedInCombat = true
@@ -89,12 +105,18 @@ function AssistDecision:execute(ctx)
 
     Target:getTargetById(ctx.assist.Id)
 
-    local dist = ctx.assist.stickDistance
-    if tostring(dist):lower() == 'maxmelee' then
-        dist = (mq.TLO.Target.MaxMeleeTo() or 15) - 1
+    local dist = resolveStickDist(ctx)
+
+    -- "behind" continuously re-forces behind-positioning on every correction,
+    -- which compounds with moveback into constant repositioning as the mob
+    -- turns/moves. "behindonce" (KissAssist uses this in its own combat stick
+    -- calls) only aims for behind once, then just holds distance afterward.
+    local stickPoint = ctx.assist.stickPoint
+    if tostring(stickPoint):lower() == 'behind' then
+        stickPoint = 'BehindOnce'
     end
 
-    mq.cmdf('/stick %s %s moveback uw', ctx.assist.stickPoint, dist)
+    mq.cmdf('/stick %s %s moveback uw', stickPoint, dist)
     if mq.TLO.Target.ID() ~= tonumber(ctx.assist.Id) then
         mq.delay(50, function() return mq.TLO.Target.ID() == tonumber(ctx.assist.Id) end)
     end

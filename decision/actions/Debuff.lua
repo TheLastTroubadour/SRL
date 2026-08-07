@@ -9,6 +9,10 @@ local IMMUNE_BACKOFF_MS = 3600000  -- 1 hour; effectively skip for the session
 local NOSLOW_FILE = 'config/srl/noslow.txt'
 
 local RESIST_RETRY_MS = 3000  -- retry 3 seconds after a resist
+local LOS_RETRY_MS    = 3000  -- retry 3 seconds after a LoS-blocked bail -- without this,
+                               -- a persistently-unreachable target gets re-selected every
+                               -- tick forever, permanently outscoring lower-priority
+                               -- decisions like Nuke that could otherwise make progress
 
 function DebuffDecision:new(config)
     local self = setmetatable({}, DebuffDecision)
@@ -199,9 +203,14 @@ function DebuffDecision:execute(ctx)
         Target:getTargetById(targetId)
     end
 
-    -- Don't commit the retry timer if the target isn't in LoS yet
+    -- Brief backoff on LoS-blocked bail so a persistently-unreachable target
+    -- doesn't win the score race every single tick and starve lower-priority
+    -- decisions (Nuke, etc.) that could otherwise make real progress.
     local spawn = mq.TLO.Spawn('id ' .. targetId)
-    if spawn() and not spawn.LineOfSight() then return end
+    if spawn() and not spawn.LineOfSight() then
+        self.retryTimer[k] = mq.gettime() + LOS_RETRY_MS
+        return
+    end
 
     if entryType == 'item' then
         local item = mq.TLO.FindItem('=' .. debuff.spell)
@@ -237,7 +246,7 @@ function DebuffDecision:execute(ctx)
         self.lastCastKey = k
 
         mq.cmd('/stick off')
-        mq.cmd('/nav stop')
+        if mq.TLO.Navigation.Active() then mq.cmd('/nav stop') end
         local gem = mq.TLO.Me.Gem(resolvedSpell)() or debuff.gem
         if not gem then return end
         mq.cmdf('/cast %s', gem)

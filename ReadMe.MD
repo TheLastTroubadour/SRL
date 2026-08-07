@@ -46,6 +46,7 @@ All commands use the unified `/srl <subcommand>` format.
 | `/srl assiston weaponset=<name>` | Assist and swap melee weapons to named set |
 | `/srl swapweapons <name>` | Swap melee weapons to named set mid-fight |
 | `/srl saveweaponset <name>` | Save currently equipped weapons to named set in YAML |
+| `/srl gemswap <name> [gem ...]` | Save currently memmed gems to a named GemSwap set in YAML (no gems = capture all) |
 | `/srl backoff` | Stop combat, clear target |
 | `/srl debuffon` | Command debuff current target (uses `DebuffOnCommand` spells) |
 | `/srl debuffoff` | Clear command debuff |
@@ -91,12 +92,14 @@ All commands use the unified `/srl <subcommand>` format.
 | `/srl status [threshold]` | Report level, exp%, and unspent AAs (supports include/exclude) |
 | `/srl turnin <item>` | Turn in item to targeted NPC |
 | `/srl say <phrase>` | Say phrase at staggered intervals |
+| `/srl hail` | Target the mob and `/keypress HAIL` at staggered intervals |
 | `/srl castcombatbuffs` | Force-cast combat buffs on all bots immediately |
 | `/srl reload` | Reload YAML config |
-| `/srl restart` | Restart all bots |
 | `/srl overlay` | Toggle group status overlay (local) |
 | `/srl debug` | Toggle debug window (local) |
-| `/srl puller` | Toggle puller mode (local) |
+| `/srl automode <role>\|off` | Set puller\|tank\|assist automode, or clear it (local) |
+| `/srl setcamp` | Set camp to current location (broadcast to raid) |
+| `/srl clearcamp` | Clear camp (broadcast to raid) |
 | `/srl count` | Show bot zone status (local) |
 | `/srl help [topic]` | Show in-game help |
 
@@ -114,9 +117,55 @@ All commands use the unified `/srl <subcommand>` format.
 /srl aeoff
 ```
 
-> `assiston` only commits if the target is an NPC that is actively aggressive.
+> `assiston` only commits if the target is an NPC that is actively aggressive. A bot with `automode` off entirely can still call it freely — the restriction only applies once a bot has opted into automode at all, in which case only `tank`/`puller` are allowed (not `assist`), rejected with a usage message otherwise.
 >
 > `debuffon` targets the mob you currently have selected and broadcasts to all bots. Only bots with `Debuff.DebuffOnCommand` populated will act. Clears automatically when the mob dies.
+>
+> If a mob push/knockback effect shoves a bot more than 20 yards past its configured stick distance, it automatically re-engages (re-targets, re-sticks, re-attacks) even though `/stick` may still report itself as active — no manual intervention needed.
+
+---
+
+### Automode / Pull
+
+```
+/srl automode puller     # this bot actively finds/tags/drags mobs back to camp
+/srl automode tank       # this bot auto-broadcasts assist on its own new targets
+/srl automode assist     # descriptive only, no behavior change
+/srl automode off        # clear automode
+/srl setcamp             # set camp to current location -- broadcasts to the whole raid
+/srl clearcamp           # clear the camp point -- also broadcast
+```
+
+Three roles, all local/in-memory (reset on script restart):
+
+- **`puller`** — actively finds an untagged mob within `Pull.Radius` of camp, tags it (configured spell/item/AA, falling back to melee), drags it back to camp, then hands off to the raid automatically via the same event `/srl assiston` uses. Requires `/srl setcamp` to be run first.
+- **`tank`** — auto-broadcasts assist whenever this bot's own target is a new live hostile NPC the raid isn't already fighting, so you don't have to manually run `/srl assiston` on every pull.
+- **`assist`** — no behavior change; every bot already reacts to the broadcast assist target regardless of automode. Purely for labeling a raid's roles through one command.
+
+Independent of automode: once the current assist target dies, whichever bot broadcast it (puller hand-off, tank auto-assist, or a manual `/srl assiston`) automatically advances to the next live aggressive XTarget mob — chain-pulls and unplanned adds get cleared without a human re-issuing assist.
+
+```yaml
+Pull:
+  Radius: 100          # search radius around camp for pull candidates
+  MaxZRange: 70          # vertical band around camp; keeps different-floor mobs out of a large horizontal Radius
+  MaxActive: 1          # max simultaneous aggressive XTarget mobs before the puller stops chain-pulling
+  ReturnDist: 15         # distance from camp considered "back", triggers hand-off
+  HealerMedThreshold: 30        # trigger a hold + raid med break while any group healer's mana is below this
+  HealerMedResumeThreshold: 90   # once holding, require this much before resuming (hysteresis)
+  Spells:                # ordered; first ready+in-range wins, melee fallback if empty/none ready
+    - spell: Ignite Bones Rk. III
+      type: spell
+      gem: 7
+      range: 200
+```
+
+**Regroup** — everyone except the puller, automatic, no toggle needed. Once camp is known (from a `setcamp` broadcast) and a bot is idle (out of combat, not casting, not following anyone), if it has drifted more than `Regroup.Distance` from camp it navs back on its own. This targets camp, not each other — everyone independently converging on the same point is what puts a scattered group (knockbacks, chasing runners) back in the same vicinity, with no coordination needed between bots.
+
+```yaml
+Regroup:
+  Distance: 75         # how far from camp before it navs back
+  ReturnDist: 15        # how close counts as "back"
+```
 
 ---
 
@@ -193,13 +242,11 @@ Data updates every 50 ms via DanNet broadcast. Entries expire after 15 seconds o
 
 ```
 /srl reload         # reload YAML config on all bots
-/srl restart        # restart all bots
 /srl overlay        # toggle group status overlay (local only)
 /srl debug          # toggle debug overlay (local only)
-/srl puller         # toggle puller mode (local only)
 ```
 
-> `puller` state is in-memory only — resets on script restart.
+See [Automode / Pull](#automode--pull) for `/srl automode`, `/srl setcamp`, `/srl clearcamp`.
 
 ---
 
@@ -293,6 +340,7 @@ The underlying event system uses `/srlevent` to pass commands and key=value payl
 | `TellSpell` | `trigger`, `target`, `sender` | Cast the spell mapped to `trigger` in `GroupBuffs.Aliases` on `target` |
 | `TellTL` | `target`, `sender` | Cast the configured `Translocate.Spell` on `target` |
 | `SayPhrase` | `id`, `msg`, `sender` | Target spawn `id` and `/say msg` after a random 500–20000 ms delay |
+| `Hail` | `id`, `sender` | Target spawn `id` and `/keypress HAIL` after a random 500–20000 ms delay |
 | `TurnIn` | `id`, `item`, `sender` | Turn in item to NPC spawn `id` |
 
 ---
@@ -709,6 +757,16 @@ GemSwap:
 > Cure gems are a common use case: declare them only in the encounter-specific set so they are not memmed during normal play.
 >
 > `/srl set Main` clears encounter-specific gems and restores the default loadout.
+
+**Writing a set from your current gem loadout (local only):**
+
+```
+/srl gemswap Main               # capture everything currently memmed into the Main set
+/srl gemswap Main 1 2 3 4 5 6   # only capture gems 1-6, leaving any other gems in Main untouched
+/srl gemswap Fire 1 2 3         # creates the Fire set if it doesn't exist yet
+```
+
+> Reads whatever is actually memmed in each gem right now and writes it to that named set in your character YAML. If the set already has an entry for a gem you're writing, it's overwritten; gems you don't list are left alone. New set names are created automatically.
 
 ---
 

@@ -17,4 +17,23 @@ function MoveUtil.navOrStick(targetId, dist)
     end
 end
 
+-- Navigate to raw coordinates (e.g. a fixed camp point, not tied to a spawn).
+-- Returns false if no path exists so the caller can abort/warn instead of hanging.
+function MoveUtil.navToLoc(x, y, z, dist)
+    dist = dist or 5
+    local locStr = string.format('locxyz %s %s %s', x, y, z)
+    if not mq.TLO.Navigation.PathExists(locStr)() then
+        return false
+    end
+    mq.cmdf('/nav %s dist=%d', locStr, dist)
+    return true
+end
+
+-- 2D distance from the player's current position to a raw {x=, y=} point.
+function MoveUtil.distanceToLoc(x, y)
+    local dx = mq.TLO.Me.X() - x
+    local dy = mq.TLO.Me.Y() - y
+    return math.sqrt(dx * dx + dy * dy)
+end
+
 return MoveUtil

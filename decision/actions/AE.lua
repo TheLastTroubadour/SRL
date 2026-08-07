@@ -18,6 +18,16 @@ function AEDecision:new(config)
     return self
 end
 
+-- AA display names don't always match their underlying spell name, so range/AERange
+-- lookups for 'aa' entries must resolve through Me.AltAbility(name).Spell rather than
+-- assuming mq.TLO.Spell(entry.name) resolves directly.
+local function resolveSpellName(entry)
+    if entry.type == 'aa' then
+        return mq.TLO.Me.AltAbility(entry.name).Spell.Name()
+    end
+    return entry.name
+end
+
 function AEDecision:score(ctx)
     self.pendingJobs = {}
 
@@ -34,10 +44,12 @@ function AEDecision:score(ctx)
         local threshold = entry.threshold or 3
         local mobCount
 
+        local spellName = resolveSpellName(entry)
+
         if entry.targeted then
             if not (ctx.assist and ctx.assist.Id) then goto continue end
-            local maxRange  = entry.maxRange  or tonumber(mq.TLO.Spell(entry.name).Range())   or 150
-            local beamWidth = entry.beamWidth or tonumber(mq.TLO.Spell(entry.name).AERange()) or 30
+            local maxRange  = entry.maxRange  or tonumber(mq.TLO.Spell(spellName).Range())   or 150
+            local beamWidth = entry.beamWidth or tonumber(mq.TLO.Spell(spellName).AERange()) or 30
             if (ctx.assist.distance or 999) > maxRange then goto continue end
             local target = mq.TLO.Spawn('id ' .. ctx.assist.Id)
             if not target() then goto continue end
@@ -46,8 +58,8 @@ function AEDecision:score(ctx)
                 string.format('npc radius %d loc %s %s %s', beamWidth, y, x, z))() or 0
             mobCount = math.min(raw, 12)
         else
-            local radius = tonumber(mq.TLO.Spell(entry.name).AERange()) or 0
-            if radius <= 0 then radius = tonumber(mq.TLO.Spell(entry.name).Range()) or 50 end
+            local radius = tonumber(mq.TLO.Spell(spellName).AERange()) or 0
+            if radius <= 0 then radius = tonumber(mq.TLO.Spell(spellName).Range()) or 50 end
             mobCount = mq.TLO.SpawnCount(string.format('npc radius %d', radius))() or 0
         end
 

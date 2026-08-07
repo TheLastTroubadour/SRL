@@ -3,6 +3,7 @@ local Job = require 'model.Job'
 local TableUtil = require 'util.TableUtil'
 local Target = require 'service.TargetService'
 local SpellUtil = require 'util.SpellUtil'
+local State = require 'core.State'
 local HealDecision = {}
 
 HealDecision.__index = HealDecision
@@ -18,6 +19,7 @@ function HealDecision:new(config)
     self.bus = nil
     self.castService = nil
     self.healCooldown = {}
+    self.healCooldownThreshold = {}
     self.hpHistory = {}
 
     return self
@@ -91,90 +93,101 @@ function HealDecision:score(ctx)
         return 110
     end
 
-    -- Find the highest-scoring target that actually has an applicable heal spell.
-    -- selectBestTarget + selectHealSpell was split across two passes, which caused
-    -- the tank (high weight) to win the score race even when above their threshold,
-    -- blocking lower-weighted members who genuinely needed a heal.
+    -- Strict tier cascade: tank first, then important, then normal. Only fall
+    -- through to the next tier if nothing in the current one actually has a
+    -- qualifying (threshold-crossed) heal available -- a tank sitting above
+    -- their own threshold never blocks a lower tier that's genuinely in trouble.
     local now = mq.gettime()
-    local bestTarget, bestHeal, bestScore = nil, nil, 0
-
     local DEFAULT_LOOKAHEAD_MS = 2000 -- rough guess until a candidate heal's real cast time is known
+    local TIERS = { 'tank', 'important', 'normal' }
 
-    for _, t in ipairs(targets) do
-        if not t.hp then goto continue end
+    for _, tier in ipairs(TIERS) do
+        local bestTarget, bestHeal, bestScore = nil, nil, 0
 
-        if t.role ~= 'tank' and self.healCooldown[t.id] and now < self.healCooldown[t.id] then
-            goto continue
-        end
+        for _, t in ipairs(targets) do
+            if t.role ~= tier or not t.hp then goto continue end
 
-        -- Trend-tracking is a tank thing: they eat sustained, repeated damage
-        -- and the trend genuinely predicts more incoming. DPS just take an
-        -- occasional single dip — feeding that through velocity/projection
-        -- would just react to noise, so they stay on the plain snapshot.
-        local projectedHp = t.hp
-        if t.role == 'tank' then
-            self:recordHpSample(t.id, t.hp, now)
-            projectedHp = self:getProjectedHp(t, DEFAULT_LOOKAHEAD_MS)
-        end
+            -- Trend-tracking is a tank thing: they eat sustained, repeated damage
+            -- and the trend genuinely predicts more incoming. DPS just take an
+            -- occasional single dip — feeding that through velocity/projection
+            -- would just react to noise, so they stay on the plain snapshot.
+            local projectedHp = t.hp
+            if t.role == 'tank' then
+                self:recordHpSample(t.id, t.hp, now)
+                projectedHp = self:getProjectedHp(t, DEFAULT_LOOKAHEAD_MS)
+            end
 
-        local weight    = t.role == 'tank' and 2 or (t.role == 'important' and 1.5 or 1)
-        local inGroupMult = (t.inGroup == false) and 0.8 or 1
-        local score     = (100 - projectedHp) * weight * inGroupMult
-
-        if score > bestScore then
-            local heal = self:selectHealSpell(t, ctx.self.heal.spells, projectedHp)
-            if heal then
-                -- Lazy-resolve rank once; same pattern as HoTDecision
-                if not heal._rspell then
-                    heal._rspell = SpellUtil.resolveRank(heal.spell, 'spell')
+            if t.role ~= 'tank' and self.healCooldown[t.id] and now < self.healCooldown[t.id] then
+                -- Still cooling down from a previously queued heal -- only bypass
+                -- if they've worsened enough since then to need a MORE urgent
+                -- tier (lower threshold) than what's already queued, so a stale/
+                -- insufficient heal doesn't block an escalation while they keep dropping.
+                local candidate = self:selectHealSpell(t, ctx.self.heal.spells, projectedHp)
+                local coolingThreshold = self.healCooldownThreshold[t.id]
+                if not (candidate and coolingThreshold and candidate.threshold < coolingThreshold) then
+                    goto continue
                 end
-                local rspell = heal._rspell or heal.spell
+            end
 
-                -- Re-project using this spell's actual cast time — if the target
-                -- is falling fast enough that they'll still be under threshold
-                -- when THIS heal lands, see if a bigger tier now applies.
-                local realCastMs = (mq.TLO.Spell(rspell).CastTime.TotalSeconds() or 0) * 1000
-                if realCastMs > 0 then
-                    local refinedHp = self:getProjectedHp(t, realCastMs)
-                    local escalated = self:selectHealSpell(t, ctx.self.heal.spells, refinedHp)
-                    if escalated and escalated ~= heal then
-                        heal = escalated
-                        if not heal._rspell then
-                            heal._rspell = SpellUtil.resolveRank(heal.spell, 'spell')
-                        end
-                        rspell = heal._rspell or heal.spell
+            local inGroupMult = (t.inGroup == false) and 0.8 or 1
+            local score       = (100 - projectedHp) * inGroupMult
+
+            if score > bestScore then
+                local heal = self:selectHealSpell(t, ctx.self.heal.spells, projectedHp)
+                if heal then
+                    -- Lazy-resolve rank once; same pattern as HoTDecision
+                    if not heal._rspell then
+                        heal._rspell = SpellUtil.resolveRank(heal.spell, 'spell')
                     end
-                end
+                    local rspell = heal._rspell or heal.spell
 
-                local spell         = mq.TLO.Spell(rspell)
-                local spellManaCost = spell.Mana() or 0
-                local spellRange    = tonumber(spell.Range()) or 200
-                local healSpawn     = mq.TLO.Spawn('id ' .. tostring(t.id))
-                if healSpawn() and not healSpawn.Dead() and (tonumber(healSpawn.Distance()) or 0) <= spellRange then
-                    if ctx.currentMana > spellManaCost and mq.TLO.Me.SpellReady(rspell)() then
-                        bestScore  = score
-                        bestTarget = t
-                        bestHeal   = heal
+                    -- Re-project using this spell's actual cast time — if the target
+                    -- is falling fast enough that they'll still be under threshold
+                    -- when THIS heal lands, see if a bigger tier now applies.
+                    local realCastMs = (mq.TLO.Spell(rspell).CastTime.TotalSeconds() or 0) * 1000
+                    if realCastMs > 0 then
+                        local refinedHp = self:getProjectedHp(t, realCastMs)
+                        local escalated = self:selectHealSpell(t, ctx.self.heal.spells, refinedHp)
+                        if escalated and escalated ~= heal then
+                            heal = escalated
+                            if not heal._rspell then
+                                heal._rspell = SpellUtil.resolveRank(heal.spell, 'spell')
+                            end
+                            rspell = heal._rspell or heal.spell
+                        end
+                    end
+
+                    local spell         = mq.TLO.Spell(rspell)
+                    local spellManaCost = spell.Mana() or 0
+                    local spellRange    = tonumber(spell.Range()) or 200
+                    local healSpawn     = mq.TLO.Spawn('id ' .. tostring(t.id))
+                    if healSpawn() and not healSpawn.Dead() and (tonumber(healSpawn.Distance()) or 0) <= spellRange then
+                        if ctx.currentMana > spellManaCost and mq.TLO.Me.SpellReady(rspell)() then
+                            bestScore  = score
+                            bestTarget = t
+                            bestHeal   = heal
+                        end
                     end
                 end
             end
+
+            ::continue::
         end
 
-        ::continue::
-    end
-
-    if bestTarget and bestHeal then
-        local resolvedName = bestHeal._rspell or bestHeal.spell
-        self.job = Job:new(
-            bestTarget.id,
-            bestTarget.name,
-            resolvedName,
-            "heal",
-            bestHeal.priority or 450,
-            bestHeal.gem
-        )
-        self.job.targetRole = bestTarget.role
-        return 105
+        if bestTarget and bestHeal then
+            local resolvedName = bestHeal._rspell or bestHeal.spell
+            self.job = Job:new(
+                bestTarget.id,
+                bestTarget.name,
+                resolvedName,
+                "heal",
+                bestHeal.priority or 450,
+                bestHeal.gem
+            )
+            self.job.targetRole = bestTarget.role
+            self.job.healThreshold = bestHeal.threshold
+            return 105
+        end
     end
 
     -- Top-off: heal anyone below threshold when nothing urgent is needed (out of combat only)
@@ -211,6 +224,7 @@ function HealDecision:execute(ctx)
     if self.job.targetRole ~= 'tank' then
         local castMs = (mq.TLO.Spell(self.job.name).CastTime.TotalSeconds() or 0) * 1000
         self.healCooldown[self.job.targetId] = mq.gettime() + castMs + 2000
+        self.healCooldownThreshold[self.job.targetId] = self.job.healThreshold
     end
 
     if self.groupHealPending then
@@ -228,6 +242,8 @@ function HealDecision:execute(ctx)
 end
 
 function HealDecision:checkGroupHeal(targets)
+
+    if State.flags.groupHealDisabled then return false end
 
     if self.groupHealLock and mq.gettime() < self.groupHealLock then
         return false

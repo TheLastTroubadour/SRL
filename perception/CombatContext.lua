@@ -154,14 +154,15 @@ function Context:build(state)
 
     ctx.numberOfAggresiveInXTar = numberOfAggressive
 
-    -- Group member list (self + live group members); used by Rez/Heal/Shrink/etc.
+    -- Group member list (self + live group members); used by Rez/Heal/Shrink/Pull/etc.
     ctx.groupMembers = {}
-    table.insert(ctx.groupMembers, { id = ctx.myId, name = ctx.myName, hp = ctx.hp, dead = false })
+    table.insert(ctx.groupMembers, { id = ctx.myId, name = ctx.myName, hp = ctx.hp, mana = ctx.mana, class = ctx.myClass, dead = false })
     local gCount = mq.TLO.Group.Members()
     for i = 1, gCount do
         local m = mq.TLO.Group.Member(i)
         if m() and m.Spawn() and not m.Dead() then
-            table.insert(ctx.groupMembers, { id = m.ID(), name = m.CleanName(), hp = m.PctHPs(), dead = false })
+            table.insert(ctx.groupMembers, { id = m.ID(), name = m.CleanName(), hp = m.PctHPs(),
+                mana = m.PctMana(), class = m.Class.ShortName(), dead = false })
         end
     end
 

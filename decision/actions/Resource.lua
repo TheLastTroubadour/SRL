@@ -45,7 +45,7 @@ function ResourceDecision:score(ctx)
     end
 
     local inCombat = (ctx.numberOfAggresiveInXTar and ctx.numberOfAggresiveInXTar > 0)
-                  or (ctx.assist.Id ~= nil and not State.flags.isPuller)
+                  or (ctx.assist.Id ~= nil and State.flags.automode ~= 'puller')
 
     if inCombat and not self.forceFull then
         if self.active and mq.TLO.Me.Sitting() then

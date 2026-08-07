@@ -1,6 +1,7 @@
 local mq = require 'mq'
 local Target = require 'service.TargetService'
 local SpellUtil = require 'util.SpellUtil'
+local State = require 'core.State'
 
 local CureDecision = {}
 CureDecision.__index = CureDecision
@@ -80,6 +81,7 @@ function CureDecision:score(ctx)
     self.pendingEntry = nil
     self.pendingSpell = nil
 
+    if State.flags.curesDisabled then return 0 end
     if ctx.casting then return 0 end
     if #self.spells == 0 then return 0 end
     if #self.queue == 0 then return 0 end

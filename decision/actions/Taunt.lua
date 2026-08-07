@@ -26,7 +26,15 @@ function TauntDecision:score(ctx)
 
     local totId = ctx.myCurrentTargetsTargetId
     if not totId or totId == 0 then return 0 end
-    if totId == mq.TLO.Me.ID() then return 0 end  -- mob already on us
+
+    if totId == mq.TLO.Me.ID() then
+        -- Still holding it -- proactive top-off if aggro is slipping
+        local ability = self:findReady(true)
+        if not ability then return 0 end
+
+        self.pending = ability
+        return 97
+    end
 
     -- If targeting another tank, don't taunt
     local totSpawn = mq.TLO.Spawn('id ' .. totId)
@@ -35,7 +43,7 @@ function TauntDecision:score(ctx)
         if totClass and TANK_CLASSES[totClass] then return 0 end
     end
 
-    local ability = self:findReady()
+    local ability = self:findReady(false)
     if not ability then return 0 end
 
     self.pending = ability
@@ -54,11 +62,28 @@ function TauntDecision:execute(ctx)
     end
 end
 
-function TauntDecision:findReady()
+-- Reactive entries (proactiveOnly=false) fire as soon as they're ready.
+-- Proactive entries (proactiveOnly=true) additionally require Me.PctAggro to
+-- have dropped below the entry's own aggroThreshold (falls back to
+-- Taunt.AggroThreshold, default 95). List order is priority order -- the
+-- first ready+qualifying entry wins, so put your preferred top-off ability
+-- first and reserve a lower aggroThreshold on a later entry as backup for
+-- when the first one is on cooldown.
+function TauntDecision:findReady(proactiveOnly)
     local abilities = self.config:get('Taunt.Abilities') or {}
+    local defaultThreshold = self.config:get('Taunt.AggroThreshold') or 95
+    local pctAggro = mq.TLO.Me.PctAggro()
+
     for _, entry in ipairs(abilities) do
-        if self:isReady(entry) then
-            return entry
+        if (entry.proactive == true) == proactiveOnly then
+            if not proactiveOnly then
+                if self:isReady(entry) then return entry end
+            else
+                local threshold = entry.aggroThreshold or defaultThreshold
+                if (pctAggro or 100) < threshold and self:isReady(entry) then
+                    return entry
+                end
+            end
         end
     end
     return nil

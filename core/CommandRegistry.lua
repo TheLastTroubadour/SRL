@@ -36,6 +36,19 @@ end
 
 function CommandRegistry:setup(commandBus, rt, config)
 
+    commandBus:register('Camp', function(payload)
+        local x, y, z = tonumber(payload.x), tonumber(payload.y), tonumber(payload.z)
+        if not x or not y or not z then return end
+        State:setCamp(x, y, z)
+        print(string.format('[SRL] Camp acknowledged (from %s): %.1f, %.1f, %.1f',
+            tostring(payload.sender), x, y, z))
+    end)
+
+    commandBus:register('ClearCamp', function(payload)
+        State:clearCamp()
+        print(string.format('[SRL] Camp cleared (from %s)', tostring(payload.sender)))
+    end)
+
     commandBus:register('Assist', function(payload)
         rt.combatController:assist(payload)
     end)
@@ -151,6 +164,50 @@ function CommandRegistry:setup(commandBus, rt, config)
         if not rt.buffService then return end
         rt.buffService:reset()
         rt.buffService:processCategory('combatBuffs', false)
+    end)
+
+    commandBus:register('GemSwapSave', function(payload)
+        local setName = payload.set
+        if not setName or setName == '' then return end
+
+        local gems = {}
+        if payload.gems and payload.gems ~= '' then
+            for tok in payload.gems:gmatch('[^,]+') do
+                local n = tonumber(tok)
+                if n then table.insert(gems, n) end
+            end
+        else
+            for i = 1, (mq.TLO.Me.NumGems() or 8) do table.insert(gems, i) end
+        end
+
+        -- Start from the current set so gems not touched by this call are left alone
+        local current = config:get('GemSwap.' .. setName) or {}
+        local newList = {}
+        for _, entry in ipairs(current) do
+            table.insert(newList, { name = entry.name, gem = entry.gem })
+        end
+
+        local written = {}
+        for _, gemNum in ipairs(gems) do
+            local spellName = mq.TLO.Me.Gem(gemNum)()
+            if spellName then
+                local found = false
+                for _, entry in ipairs(newList) do
+                    if entry.gem == gemNum then
+                        entry.name = spellName
+                        found = true
+                        break
+                    end
+                end
+                if not found then
+                    table.insert(newList, { name = spellName, gem = gemNum })
+                end
+                table.insert(written, string.format('%d=%s', gemNum, spellName))
+            end
+        end
+
+        config:patchCharacterYaml('GemSwap.' .. setName, newList)
+        print(string.format('[SRL] GemSwap "%s" saved: %s', setName, table.concat(written, ', ')))
     end)
 
     commandBus:register('WeaponSet', function(payload)
@@ -286,7 +343,7 @@ function CommandRegistry:setup(commandBus, rt, config)
     commandBus:register('MedOff', function()
         State:setMedMode(false)
         rt.resourceDecision:clearForceFull()
-        if not (State.flags.isPuller and mq.TLO.Me.Feigning()) then
+        if not (State.flags.automode == 'puller' and mq.TLO.Me.Feigning()) then
             mq.cmd('/stand')
         end
         if rt.melodyService then rt.melodyService:resume() end
@@ -311,6 +368,36 @@ function CommandRegistry:setup(commandBus, rt, config)
     commandBus:register('BuffOff', function()
         State.flags.buffDisabled = true
         print('[SRL] Buffing disabled')
+    end)
+
+    commandBus:register('CuresOn', function()
+        State.flags.curesDisabled = false
+        print('[SRL] Cures enabled')
+    end)
+
+    commandBus:register('CuresOff', function()
+        State.flags.curesDisabled = true
+        print('[SRL] Cures disabled')
+    end)
+
+    commandBus:register('EpicOn', function()
+        State.flags.epicDisabled = false
+        print('[SRL] Cleric epic click enabled')
+    end)
+
+    commandBus:register('EpicOff', function()
+        State.flags.epicDisabled = true
+        print('[SRL] Cleric epic click disabled')
+    end)
+
+    commandBus:register('GroupHealOn', function()
+        State.flags.groupHealDisabled = false
+        print('[SRL] Group heals enabled')
+    end)
+
+    commandBus:register('GroupHealOff', function()
+        State.flags.groupHealDisabled = true
+        print('[SRL] Group heals disabled')
     end)
 
     commandBus:register('ResourceOn', function()
@@ -818,6 +905,23 @@ function CommandRegistry:setup(commandBus, rt, config)
             local targetName = mq.TLO.Target.CleanName() or ''
             local resolved = msg:gsub('%%t', targetName)
             mq.cmdf('/say %s', resolved)
+        end)
+    end)
+
+    commandBus:register('Hail', function(payload)
+        local targetId = tonumber(payload.id)
+        if not targetId or targetId == 0 then return end
+        if not mq.TLO.Spawn('id ' .. targetId)() then return end
+
+        rt.castService.scheduler:spawn(function()
+            -- Stagger: each bot waits a random interval so they don't all hail at once
+            mq.delay(math.random(500, 20000))
+
+            if mq.TLO.Target.ID() ~= targetId then
+                Target:getTargetById(targetId)
+            end
+
+            mq.cmd('/keypress HAIL')
         end)
     end)
 

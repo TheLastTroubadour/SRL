@@ -134,7 +134,7 @@ function CCDecision:scoreEnchanter(ctx)
     if not spell then return 0 end
     self.pendingTarget = target
     self.pendingSpell = spell
-    return 95
+    return 116
 end
 
 function CCDecision:execute(ctx)
@@ -148,15 +148,23 @@ function CCDecision:execute(ctx)
         Target:getTargetById(self.pendingTarget)
     end
 
+    local spellName = self.pendingSpell._resolved or SpellUtil.resolveRank(self.pendingSpell.spell, 'spell')
+    local castTime = (mq.TLO.Spell(spellName).CastTime.TotalSeconds() or 3) * 1000 + 1500
+    local recastBuffer = self.config:get('CrowdControl.RecastBuffer') or 10
+
     -- Authoritative check: mob may be standing still but not mezzed (attacking),
-    -- or may still be mezzed despite timer expiry (AE landed, etc.)
+    -- or may still be mezzed despite timer expiry (AE landed, etc.). Only defer
+    -- if there's more than RecastBuffer left on the current mez -- otherwise
+    -- recast now so the new mez lands with room to spare before the old one
+    -- actually drops, instead of waiting for true expiry every time.
     if mq.TLO.Target.Mezzed() then
-        -- Still mezzed — refresh recastAt. Enchanters get focused duration; bards use base.
-        self.mezzed[self.pendingTarget] = self:calcRecastAt(ctx)
-        return
+        local remainingMs = mq.TLO.Target.Mezzed.Duration() or 0
+        if remainingMs > (recastBuffer * 1000) then
+            self.mezzed[self.pendingTarget] = self:calcRecastAt(ctx)
+            return
+        end
     end
 
-    local recastBuffer = self.config:get('CrowdControl.RecastBuffer') or 10
     local baseRecastAt = self:calcRecastAt(ctx)
 
     -- Track which targets this cast is for so fizzle/resist can clear them
@@ -177,13 +185,11 @@ function CCDecision:execute(ctx)
         mq.delay(2000, function() return not mq.TLO.Me.Casting() end)
     else
         mq.cmd('/stick off')
-        mq.cmd('/nav stop')
+        if mq.TLO.Navigation.Active() then mq.cmd('/nav stop') end
     end
     self.waitingForResult = true
-    local spellName = self.pendingSpell._resolved or SpellUtil.resolveRank(self.pendingSpell.spell, 'spell')
     local gem = mq.TLO.Me.Gem(spellName)() or self.pendingSpell.gem
     if not gem then return end
-    local castTime = (mq.TLO.Spell(spellName).CastTime.TotalSeconds() or 3) * 1000 + 1500
     mq.cmdf('/cast %s', gem)
     mq.delay(1000, function() return mq.TLO.Me.Casting() ~= nil end)
     mq.delay(castTime, function() return not mq.TLO.Me.Casting() end)

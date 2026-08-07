@@ -162,6 +162,9 @@ function ConfigValidator.run(config)
     -- Taunt
     checkList('Taunt.Abilities', config:get('Taunt.Abilities'), 'name', 'type')
 
+    -- Pull
+    checkList('Pull.Spells', config:get('Pull.Spells'), 'spell', 'type')
+
     -- Heals
     local function checkHealRoles(section)
         local roles = config:get(section)

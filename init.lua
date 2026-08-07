@@ -424,6 +424,10 @@ local function mainLoop()
     local memSwapDecision      = MemSwapDecision:new(config, castService)
     local canniDecision        = CanniDecision:new(config, castService)
     local charmDecision        = CharmDecision:new(config)
+    local assistAdvanceDecision = require('decision.actions.AssistAdvance'):new()
+    local tankAssistDecision    = require('decision.actions.TankAssist'):new()
+    local pullDecision          = require('decision.actions.Pull'):new(config)
+    local regroupDecision       = require('decision.actions.Regroup'):new(config)
     local context = Context:new(config)
 
     CommandRegistry:setup(CommandBus, {
@@ -453,12 +457,16 @@ local function mainLoop()
 
     local engine = DecisionEngine:new({
         movementDecision,
+        pullDecision,
+        regroupDecision,
         tauntDecision,
         resourceDecision,
         ccDecision,
         debuffDecision,
         nukeDecision,
         assistDecision,
+        assistAdvanceDecision,
+        tankAssistDecision,
         healDecision,
         clericDecision,
         giftOfMana,
@@ -518,6 +526,8 @@ local function mainLoop()
             lastZoneId = currentZoneId
             State:stopAssist()
             State:stopFollow()
+            State:clearCamp()
+            pullDecision:abort()
             castService:clearQueue()
             cureService:reset()
             cureDecision:reset()
@@ -535,7 +545,7 @@ local function mainLoop()
         wasDead = isDead
 
         -- Stand up if force-feigned by a mob, unless this bot is the designated puller
-        if mq.TLO.Me.Feigning() and not State.flags.isPuller then
+        if mq.TLO.Me.Feigning() and State.flags.automode ~= 'puller' then
             mq.cmd('/stand')
         end
 
