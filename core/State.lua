@@ -6,6 +6,9 @@ State.lastActivity = mq.gettime()
 State.assist = {
     generation = 0,
     targetId   = nil,
+    targetName = nil, -- EQ recycles spawn IDs once a mob despawns, so a later mob
+                       -- can legitimately reuse an old target's ID -- name is the
+                       -- tiebreaker for "is this actually the same engagement."
     scope      = nil,
     active = false,
     sender = nil,
@@ -62,6 +65,7 @@ State.spellSet = 'Main'
 -- ===== Local Toggles =====
 State.flags = {
     paused                = false,
+    manualMode            = false,  -- true = all automation suspended, /srl manualmode to toggle
     automode              = nil,   -- nil = off, else 'puller' | 'tank' | 'assist'
     aeEnabled             = false,
     expMode               = false,
@@ -97,12 +101,14 @@ end
 function State:stopAssist()
     self.assist.active = false
     self.assist.targetId = nil
+    self.assist.targetName = nil
     self.assist.sender = nil
 end
 
 function State:updateAssistState(payload)
     self.assist.generation = self.assist.generation + 1
     self.assist.targetId = payload.id
+    self.assist.targetName = payload.name
     self.assist.sender = payload.sender
     self.assist.active = true
 end
@@ -114,6 +120,7 @@ end
 function State:clearCombatState()
     self.assist.generation = self.assist.generation + 1
     self.assist.targetId = nil
+    self.assist.targetName = nil
     self.assist.active = false
 end
 

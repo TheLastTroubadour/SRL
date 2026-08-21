@@ -2,7 +2,6 @@ local mq = require 'mq'
 
 local CHECK_INTERVAL_MS     = 3000
 local BROADCAST_COOLDOWN_MS = 8000
-local CURABLE_TYPES         = { Poison = true, Disease = true, Curse = true, Corruption = true }
 
 local CureService = {}
 CureService.__index = CureService
@@ -23,8 +22,12 @@ function CureService:isIgnored(buffName)
     return false
 end
 
--- Called every main loop tick. Detects own affliction counters and broadcasts
--- a NeedCure event via dgae so any configured curer on the network can respond.
+-- Called every main loop tick. Detects all detrimental buffs (not just ones
+-- carrying a Poison/Disease/Curse/Corruption counter) and broadcasts a
+-- NeedCure event via dgae so any configured curer on the network can respond.
+-- Cure type sent per debuff is its CounterType when present, else the debuff's
+-- own name (underscored) as a pseudo-type — lets Cures.Spells entries target
+-- a specific uncountered debuff by name instead of only the four counter types.
 function CureService:update()
     if mq.TLO.Me.Dead() then return end
     local now = mq.gettime()
@@ -40,17 +43,17 @@ function CureService:update()
     for i = 1, slots do
         local buff = mq.TLO.Me.Buff(i)
         if buff() and buff.SpellType() == 'Detrimental' then
-            local ct   = buff.CounterType()
             local name = buff.Name()
-            if ct and CURABLE_TYPES[ct] and not seenTypes[ct] then
-                local counters = mq.TLO.Me['Counters' .. ct]()
-                if counters and counters > 0 then
-                    seenTypes[ct] = true
-                    table.insert(types, ct)
-                    if name and not seenNames[name] and not self:isIgnored(name) then
-                        seenNames[name] = true
-                        table.insert(buffNames, (name:gsub(' ', '_')))
-                    end
+            if name and not seenNames[name] and not self:isIgnored(name) then
+                seenNames[name] = true
+                local underscored = name:gsub(' ', '_')
+                table.insert(buffNames, underscored)
+
+                local ct = buff.CounterType()
+                local cureType = (ct and ct ~= '' and ct) or underscored
+                if not seenTypes[cureType] then
+                    seenTypes[cureType] = true
+                    table.insert(types, cureType)
                 end
             end
         end

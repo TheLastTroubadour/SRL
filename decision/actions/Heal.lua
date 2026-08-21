@@ -161,7 +161,11 @@ function HealDecision:score(ctx)
                     local spellManaCost = spell.Mana() or 0
                     local spellRange    = tonumber(spell.Range()) or 200
                     local healSpawn     = mq.TLO.Spawn('id ' .. tostring(t.id))
-                    if healSpawn() and not healSpawn.Dead() and (tonumber(healSpawn.Distance()) or 0) <= spellRange then
+                    local spawnOk       = healSpawn() and not healSpawn.Dead()
+                    local dist          = spawnOk and tonumber(healSpawn.Distance()) or nil
+                    local inRange       = spawnOk and dist and dist <= spellRange
+
+                    if inRange then
                         if ctx.currentMana > spellManaCost and mq.TLO.Me.SpellReady(rspell)() then
                             bestScore  = score
                             bestTarget = t
@@ -313,44 +317,6 @@ function HealDecision:checkGroupHeal(targets)
 
 end
 
-function HealDecision:collectTargets(ctx)
-
-    local targets = {}
-
-    for i = 1, mq.TLO.Group.Members() do
-
-        local m = mq.TLO.Group.Member(i)
-
-        if m() and m.Spawn() then
-            local role = ctx:getHealerRole(m.CleanName())
-            table.insert(targets,{
-                id = m.ID(),
-                name = m.CleanName(),
-                hp = m.PctHPs(),
-                role = role
-            })
-        end
-
-    end
-
-    return targets
-end
-
-function HealDecision:getRole(name)
-    for _,t in ipairs(self.tanks) do
-        if t == name then
-            return "tank"
-        end
-    end
-
-    for _,b in ipairs(self.importantBots) do
-        if b == name then
-            return "important"
-        end
-    end
-    return "normal"
-end
-
 function HealDecision:selectHealSpell(target, healSpells, hpOverride)
 
     local spells = healSpells[target.role]
@@ -378,42 +344,5 @@ function HealDecision:selectHealSpell(target, healSpells, hpOverride)
 
     return chosen
 end
-
-function HealDecision:selectBestTarget(targets)
-
-    local best = nil
-    local bestScore = 0
-    local now = mq.gettime()
-
-    for _,t in ipairs(targets) do
-
-            if not t.hp then goto continue end
-
-            -- Non-tanks suppressed while a heal is still in-flight
-            if t.role ~= 'tank' and self.healCooldown[t.id] and now < self.healCooldown[t.id] then
-                goto continue
-            end
-
-            local weight = 1
-
-            if t.role == "tank" then
-                weight = 2
-            elseif t.role == "important" then
-                weight = 1.5
-            end
-
-            local score = (100 - t.hp) * weight
-
-            if score > bestScore then
-                bestScore = score
-                best = t
-                best.priority = 450
-            end
-            ::continue::
-    end
-
-    return best
-end
-
 
 return HealDecision

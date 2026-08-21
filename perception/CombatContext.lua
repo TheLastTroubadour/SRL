@@ -23,9 +23,27 @@ function Context:new(config)
     self.assistType       = config:get('AssistSettings.type') or 'off'
     self.stickPoint       = config:get('AssistSettings.meleeStickPoint') or 'behind'
     self.stickDistance    = config:get('AssistSettings.meleeStickDistance') or 10
-    self.raidSpawnIdCache = {}  -- name → spawn ID cache to avoid per-tick name lookups
     self:reloadSet('Main')
     return self
+end
+
+function Context:setStatusService(statusService)
+    self.statusService = statusService
+end
+
+function Context:setDanNetHpService(danNetHpService)
+    self.danNetHpService = danNetHpService
+end
+
+-- DanNet observer HP first (peer's own native plugin push, not gated behind
+-- their Lua script's mq.delay while mid-cast), falling back to our own
+-- char_status broadcast (gated behind that bot's main loop). Never spawn HP.
+function Context:getPeerHp(name)
+    if self.danNetHpService then
+        local hp = self.danNetHpService:getHp(name)
+        if hp then return hp end
+    end
+    return self.statusService and self.statusService:getHp(name)
 end
 
 function Context:setStickPoint(point)
@@ -215,29 +233,32 @@ function Context:build(state)
             end
 
             -- Raid members
+            -- NOTE: r.CleanName()/r.Dead() are NOT real RaidMember TLO fields (only
+            -- Name/Group/GroupLeader/RaidLeader/Spawn/Looter/Class/Level are) -- calling
+            -- them silently falls through to a SECOND independent GetSpawnByName lookup
+            -- per call. r.Name() and r.Spawn are both native fields (single lookup),
+            -- so use those instead of stacking two-to-three separate name resolutions
+            -- that can each silently fail and drop the member with zero error output.
             local raidMembers = mq.TLO.Raid.Members() or 0
             for i = 1, raidMembers do
                 local r = mq.TLO.Raid.Member(i)
-                if r() and not r.Dead() then
-                    local name = r.CleanName()
+                if r() then
+                    local name = r.Name()
                     if name and not seen[name] then
-                        -- Use cached spawn ID; resolve via name lookup only on first sight
-                        local id = self.raidSpawnIdCache[name]
-                        if not id then
-                            local spawn = mq.TLO.Spawn('pc =' .. name)
-                            if spawn() then
-                                id = spawn.ID()
-                                self.raidSpawnIdCache[name] = id
-                            end
-                        end
-                        if id then
+                        local spawn = r.Spawn
+                        -- spawn.PctHPs() is NOT trusted here -- raid data carries no native HP
+                        -- field at all (see RaidMember struct in eqlib), so it silently falls
+                        -- back to whatever this client last happened to sync for that spawn,
+                        -- which can be badly stale (proven: read 71% for a target actually at
+                        -- 100%). Only the bus-broadcast, self-reported HP is trustworthy -- if
+                        -- this raid member isn't a known SRL peer reporting one, skip them
+                        -- entirely rather than heal off a number that might just be wrong.
+                        local hp = self:getPeerHp(name)
+                        if spawn() and not spawn.Dead() and hp then
                             seen[name] = true
                             local role = self:getHealerRole(name)
-                            -- Prefer live spawn HP — raid frame HP is stale for out-of-group members
-                            local spawn = mq.TLO.Spawn('id ' .. id)
-                            local hp = (spawn() and spawn.PctHPs()) or r.PctHPs()
                             table.insert(ctx.self.heal.group.memberStatus, {
-                                id      = id,
+                                id      = spawn.ID(),
                                 name    = name,
                                 hp      = hp,
                                 role    = role,

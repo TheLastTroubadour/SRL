@@ -44,6 +44,17 @@ function StatusService:update(data)
     }
 end
 
+-- Every bot always knows its own HP with certainty and broadcasts it every
+-- tick (see init.lua char_status broadcast) -- far more reliable than reading
+-- a raid member's spawn HP, which is only fresh if this client is actively
+-- tracking that entity (see CombatContext.lua raid-member scan).
+function StatusService:getHp(name)
+    local entry = self.peers[name]
+    if not entry or entry.hp == nil then return nil end
+    if (mq.gettime() - entry.updatedAt) >= EXPIRY_MS then return nil end
+    return entry.hp
+end
+
 function StatusService:getAll()
     local now      = mq.gettime()
     local myZone   = mq.TLO.Zone.ShortName() or ''

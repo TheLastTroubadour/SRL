@@ -10,7 +10,8 @@ function AssistUtil.broadcastAssist(targetId, extra)
     local generation = State.assist.generation + 1
     mq.cmdf('/dgze /srlevent Assist id=%s generation=%s sender=%s%s',
         targetId, generation, me, extra or '')
-    State:updateAssistState({ id = targetId, sender = me })
+    local name = mq.TLO.Spawn('id ' .. tostring(targetId)).CleanName()
+    State:updateAssistState({ id = targetId, name = name, sender = me })
 end
 
 return AssistUtil

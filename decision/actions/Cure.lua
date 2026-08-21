@@ -8,6 +8,17 @@ CureDecision.__index = CureDecision
 
 local CLAIM_DURATION_MS = 7000
 
+-- Exact-token match against a comma-separated types string. Types can now include
+-- free-form debuff names (see CureService), so a plain substring find risks false
+-- positives (e.g. a debuff named "...Disease..." matching a configured "Disease" type).
+local function hasType(typesStr, coverType)
+    if not typesStr then return false end
+    for t in typesStr:gmatch('[^,]+') do
+        if t == coverType then return true end
+    end
+    return false
+end
+
 function CureDecision:new(config)
     local self = setmetatable({}, CureDecision)
     self.name           = "CureDecision"
@@ -147,7 +158,7 @@ function CureDecision:execute(ctx)
             if e.targetId ~= entry.targetId and mq.TLO.Group.Member(e.targetName)() then
                 for coverType in spell.type:gmatch('[^,]+') do
                     coverType = coverType:match('^%s*(.-)%s*$')
-                    if e.types and e.types:find(coverType, 1, true) then
+                    if e.types and hasType(e.types, coverType) then
                         self:claimTarget(e.targetId)
                         mq.cmdf('/dgae /srlevent ClaimCure id=%s', e.targetId)
                         break
@@ -175,7 +186,7 @@ function CureDecision:countUnclaimed(coverType)
     local count = 0
     for _, entry in ipairs(self.queue) do
         if not self.claimedTargets[entry.targetId] then
-            if entry.types and entry.types:find(coverType, 1, true) then
+            if entry.types and hasType(entry.types, coverType) then
                 count = count + 1
             end
         end
@@ -196,7 +207,7 @@ function CureDecision:findSpell(entry)
         end
         for coverType in spell.type:gmatch('[^,]+') do
             coverType = coverType:match('^%s*(.-)%s*$')
-            if typesStr:find(coverType, 1, true) and self:isReady(spell) then
+            if hasType(typesStr, coverType) and self:isReady(spell) then
                 if spell.minInjured and self:countUnclaimed(coverType) < spell.minInjured then
                     goto nextSpell
                 end

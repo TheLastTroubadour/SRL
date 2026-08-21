@@ -12,6 +12,11 @@ local HEALER_CLASSES = { CLR = true, SHM = true, DRU = true }
 -- drags it back to camp, and hands off to the raid via the same Assist event
 -- pipeline as /srl assiston. Runs as a per-tick state machine (not a blocking
 -- coroutine) so Heal/CC/Resource can still preempt the puller mid-cycle.
+--
+-- automode='tankpuller' reuses this entire pipeline but holds the mob at
+-- camp itself instead of handing off to someone else -- TankAssistDecision
+-- (also gated to allow 'tankpuller') notices the live target and broadcasts
+-- assist for the raid, same as a normal standalone tank would.
 local PullDecision = {}
 PullDecision.__index = PullDecision
 
@@ -46,11 +51,26 @@ function PullDecision:healersReady(ctx)
 end
 
 function PullDecision:score(ctx)
-    if State.flags.automode ~= 'puller' then
+    if State.flags.automode ~= 'puller' and State.flags.automode ~= 'tankpuller' then
         self:abort()
         return 0
     end
     if not State.pull.camp then return 0 end
+
+    -- Safety net: score() runs every tick on every module regardless of which
+    -- one actually wins, so this can fire even if Pull keeps losing the
+    -- DecisionEngine comparison to something else (CrowdControl mez scores up
+    -- to 120, well above Pull's 95). Without this, a starved mid-cycle state
+    -- machine would never reach its own tick*() timeout checks -- those only
+    -- run inside execute(), which never gets called while Pull keeps losing --
+    -- so the puller could sit frozen (not fighting, not fleeing, not
+    -- returning) indefinitely instead of just past the intended 15s.
+    if self.state ~= 'idle' and mq.gettime() - self.stateStartTs > STUCK_TIMEOUT_MS then
+        print(string.format('[SRL] Pull: stuck in state "%s" past timeout (likely starved by a higher-priority action), aborting', self.state))
+        self:abort()
+        return 0
+    end
+
     local isBard = ctx.myClass == 'BRD'
     if ctx.casting and not isBard then return 0 end
 
@@ -326,7 +346,19 @@ function PullDecision:tickHandoff(ctx)
         end
     end
 
-    AssistUtil.broadcastAssist(self.candidateId)
+    if State.flags.automode == 'tankpuller' then
+        -- Hold and tank it ourselves rather than handing off to someone else --
+        -- re-engage attack (tickConfirmAggro turned it off for the drag back),
+        -- make sure we're targeting the candidate, then let TankAssistDecision
+        -- (now allowed for tankpuller too) notice this live target and
+        -- broadcast assist for the raid on its own, same as a normal tank.
+        if mq.TLO.Target.ID() ~= self.candidateId then
+            Target:getTargetById(self.candidateId)
+        end
+        mq.cmd('/attack on')
+    else
+        AssistUtil.broadcastAssist(self.candidateId)
+    end
     self.state = 'idle'
     self.candidateId = nil
 end

@@ -11,7 +11,8 @@ return {
     },
     SHD = {
         ShadowKnight = {
-            LifeTap = ''
+            LifeTap          = '',
+            LifeTapThreshold = 85,
         },
         Epic = { name = "Innoruuk's Dark Blessing" }
     },

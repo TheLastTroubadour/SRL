@@ -38,30 +38,47 @@ end
 -- True if someone other than the current cast's own target has dropped to a
 -- genuinely critical HP% right now. Live TLO reads, so this stays accurate
 -- even while the rest of the script is frozen inside this same mq.delay.
+-- Group members use native, always-fresh GroupMember fields. Raid-wide
+-- coverage comes from the bus-broadcast statusService instead of raid-member
+-- spawn HP -- raid data has no native HP field at all, so PctHPs()/Dead() on
+-- a raid member silently fall back to spawn data that's only fresh if this
+-- client happens to be actively tracking that entity (proven stale in testing).
 function CastService:emergencyInterruptNeeded(job)
     if mq.gettime() - self.lastInterruptAt < INTERRUPT_COOLDOWN_MS then
         return false
     end
 
-    local function isCritical(id, hp)
-        return id and id ~= job.targetId and hp and hp <= EMERGENCY_HP_THRESHOLD
+    local function isCritical(name, hp, dead)
+        return name and name ~= job.targetName and not dead and hp and hp <= EMERGENCY_HP_THRESHOLD
     end
 
     for i = 1, mq.TLO.Group.Members() do
         local m = mq.TLO.Group.Member(i)
-        if m() and not m.Dead() and isCritical(m.ID(), m.PctHPs()) then
+        if m() and isCritical(m.CleanName(), m.PctHPs(), m.Dead()) then
             return true
         end
     end
 
-    for i = 1, (mq.TLO.Raid.Members() or 0) do
-        local r = mq.TLO.Raid.Member(i)
-        if r() and not r.Dead() and isCritical(r.Spawn.ID(), r.PctHPs()) then
-            return true
+    if self.statusService then
+        for _, peer in ipairs(self.statusService:getAll()) do
+            -- Prefer the DanNet observer's HP when we have one (fresher --
+            -- driven by the peer's own plugin, not their Lua main loop).
+            local hp = (self.danNetHpService and self.danNetHpService:getHp(peer.name)) or peer.hp
+            if isCritical(peer.name, hp, peer.dead) then
+                return true
+            end
         end
     end
 
     return false
+end
+
+function CastService:setStatusService(statusService)
+    self.statusService = statusService
+end
+
+function CastService:setDanNetHpService(danNetHpService)
+    self.danNetHpService = danNetHpService
 end
 
 function CastService:setBus(bus)
@@ -373,6 +390,13 @@ function CastService:castDisc(job)
         end
     end
 
+    -- Buff-granting discs (CombatBuff/SelfBuff entries) shouldn't refire while the
+    -- buff they grant is still up -- ActiveDisc above only covers the disc's own
+    -- brief channel window, not the resulting buff's actual duration.
+    if job.buffName and not job.force and self:checkIfHasBuff(job) then
+        return "NOT_READY"
+    end
+
     if not mq.TLO.Me.CombatAbilityReady(job.name)() then
         return "NOT_READY"
     end
@@ -414,6 +438,14 @@ function CastService:checkIfHasBuff(job)
     -- Check distributed cache first — populated by each bot broadcasting its own buff changes
     if self.buffService and self.buffService:hasKnownBuff(job.targetName, checkName) then
         return true
+    end
+    -- Self-targeted jobs can always check directly, regardless of current target
+    if job.targetId == mq.TLO.Me.ID() then
+        local baseName = checkName:gsub('%s+Rk%.%s*%a+$', '')
+        return mq.TLO.Me.Buff('=' .. checkName)() ~= nil
+                or mq.TLO.Me.Buff(baseName)() ~= nil
+                or mq.TLO.Me.Song('=' .. checkName)() ~= nil
+                or mq.TLO.Me.Song(baseName)() ~= nil
     end
     -- Fall back to target buff window, only reliable when already targeting this character
     if mq.TLO.Target.ID() == job.targetId then
@@ -476,6 +508,11 @@ function CastService:srlCast(job)
         local gem = mq.TLO.Me.Gem(job.name)() or job.gem
         if not gem then return end
         local castTime = mq.TLO.Spell(job.name).CastTime.TotalSeconds() * 1000 + 1500
+
+        if job.type == 'heal' then
+            mq.cmdf('/dga all /echo [SRL] %s healing %s with %s', mq.TLO.Me.Name(), job.targetName or '?', job.name)
+        end
+
         mq.cmdf('/cast %s', gem)
         mq.delay(1000, function() return mq.TLO.Me.Casting() ~= nil end)
         -- Main loop is blocked during mq.delay, so broadcast casting status now

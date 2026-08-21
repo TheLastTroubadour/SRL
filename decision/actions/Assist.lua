@@ -58,7 +58,10 @@ function AssistDecision:score(ctx)
         return self.mode == 'petattack' and 88 or 0
     end
 
-    if ctx.isForeground then
+    -- Foreground normally means a human is driving this client manually, so stay
+    -- hands-off. Automode is an explicit opt-in to automation even while foregrounded,
+    -- so the caller still engages instead of standing there waiting for manual input.
+    if ctx.isForeground and not State.flags.automode then
         return 0
     end
 

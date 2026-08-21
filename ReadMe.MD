@@ -368,7 +368,8 @@ A default file is generated on first run. Key sections:
 | `AE.Spells` | AE spells/discs/AAs — enabled via `/srl aeon`, disabled by default |
 | `Buffs.GroupBuff` | Buffs swept across all raid members every 10 minutes |
 | `RaidBuff.MinManaPct` | Mana % below which the raid buff sweep is deferred 2 minutes (default 20) |
-| `Nukes.Main` | Nuke spells with gem. Additional sets: `Nukes.Fire`, `Nukes.Ice`, etc. |
+| `Nukes.Main` | Nuke spells with gem. Additional sets: `Nukes.Fire`, `Nukes.Ice`, etc. `checkFor` (a buff/song name) makes an entry cast ahead of the rest of the list whenever that buff is missing, and drop out of normal rotation while it's up. |
+| `ShadowKnight.LifeTap` | SHD self-heal lifetap spell name — cast on self below `ShadowKnight.LifeTapThreshold` (default 85). Requires `ShadowKnight.LifeTapGem` to be set (the gem it gets memmed into on demand); without a gem the decision stays disabled. |
 | `Jolts.Main` | Aggro-reduction spells with `aggroThreshold` per spell. Jolts never change with `/srl set`. |
 | `CrowdControl.Enabled` | `true`/`false` |
 | `CrowdControl.Spells` | Mez spells with gem, priority, and optional `ae: true` for AE mez |

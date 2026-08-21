@@ -18,7 +18,7 @@ local ARMOR_TYPES = {
 }
 
 -- Valid /srl automode <role> values
-local VALID_AUTOMODES = { puller = true, tank = true, assist = true }
+local VALID_AUTOMODES = { puller = true, tank = true, assist = true, tankpuller = true }
 
 -- Build "key=val key=val ..." string from a list of raw arg tokens,
 -- excluding any keys in the skip set (those are set by the bind itself).
@@ -128,10 +128,11 @@ function CommandBus:init()
         if subcmd == 'assiston' then
             -- Only restricted once opted into automode at all -- automode off
             -- (never touched /srl automode) can still call assist freely; once
-            -- in automode, only tank/puller (not assist) are allowed to.
-            if State.flags.automode and State.flags.automode ~= 'tank' and State.flags.automode ~= 'puller' then
+            -- in automode, only tank/puller/tankpuller (not assist) are allowed to.
+            if State.flags.automode and State.flags.automode ~= 'tank' and State.flags.automode ~= 'puller'
+                    and State.flags.automode ~= 'tankpuller' then
                 print('[SRL] assiston: automode is "' .. State.flags.automode
-                    .. '" -- only tank/puller automode can call assist')
+                    .. '" -- only tank/puller/tankpuller automode can call assist')
                 return
             end
             local targetId = mq.TLO.Target.ID()
@@ -466,6 +467,9 @@ function CommandBus:init()
 
         elseif subcmd == 'overlay' then
             mq.cmd('/srlevent ToggleGroupStatus')
+
+        elseif subcmd == 'manualmode' then
+            mq.cmd('/srlevent ToggleManualMode')
 
         elseif subcmd == 'benchhps' then
             local mode = args[1] and args[1]:lower()

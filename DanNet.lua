@@ -1,3 +1,4 @@
+local mq = require 'mq'
 local dannet_export = {}
 
 function dannet_export.query(peer, query, timeout)
@@ -17,7 +18,7 @@ function dannet_export.read_observer(peer, query, timeout)
 end
 
 function dannet_export.create_observer(peer, query, timeout)
-    print(("Creating observer for %S with query %s"):format(peer, query))
+    print(("Creating observer for %s with query %s"):format(peer, query))
     mq.cmdf('/dobserve %s -q "%s"', peer, query)
     if timeout > 0 then
         mq.delay(25)

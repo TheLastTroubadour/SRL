@@ -41,6 +41,13 @@ function NukeDecision:score(ctx)
     local hasGoM = mq.TLO.Me.Buff('Gift of Mana')() ~= nil
              or mq.TLO.Me.Song('Gift of Mana')() ~= nil
     if hasGoM then return 0 end
+
+    -- Same idea for Twincast -- let Twincast.lua land the configured
+    -- high-value spell instead of burning the double-cast on whatever's
+    -- next in normal rotation.
+    local hasTwincast = mq.TLO.Me.Buff('Twincast')() ~= nil
+             or mq.TLO.Me.Song('Twincast')() ~= nil
+    if hasTwincast then return 0 end
     if ctx.assist.distance and ctx.assist.distance > 200 then return 0 end
     if ctx.mana < 6 then return 0 end
 
@@ -134,6 +141,18 @@ end
 function NukeDecision:findReady(list, targetId, hp)
     if not list or #list == 0 then return nil end
 
+    -- Buff-granting nukes: cast ahead of priority/round-robin if we're missing the buff
+    for _, entry in ipairs(list) do
+        if entry.checkFor then
+            local missing = mq.TLO.Me.Buff(entry.checkFor)() == nil
+                    and mq.TLO.Me.Song(entry.checkFor)() == nil
+            if missing then
+                entry:setTargetId(targetId)
+                if self:meetsHpCondition(entry, hp) and self:canUse(entry) then return entry end
+            end
+        end
+    end
+
     -- Check if any entry has explicit priority set
     local hasPriority = false
     for _, entry in ipairs(list) do
@@ -179,6 +198,14 @@ function NukeDecision:findReady(list, targetId, hp)
 end
 
 function NukeDecision:canUse(entry)
+    -- Buff-granting nukes only belong in normal rotation while the buff is missing --
+    -- the checkFor fast-path in findReady handles casting it when it's actually needed.
+    if entry.checkFor then
+        local hasBuff = mq.TLO.Me.Buff(entry.checkFor)() ~= nil
+                or mq.TLO.Me.Song(entry.checkFor)() ~= nil
+        if hasBuff then return false end
+    end
+
     if entry.type == 'ability' then
         return mq.TLO.Me.AbilityReady(entry.name)() == true
     end
@@ -204,6 +231,7 @@ function NukeDecision:getJobsFromKey(key, jobType)
             job.priority       = v.priority or 0
             job.hpBelow        = v.hpBelow
             job.hpAbove        = v.hpAbove
+            job.checkFor       = v.checkFor
             table.insert(jobList, job)
         end
     end

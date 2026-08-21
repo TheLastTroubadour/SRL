@@ -51,6 +51,7 @@ local DotDecision           = require 'decision.actions.Dot'
 local MemSwapDecision       = require 'decision.actions.MemSwap'
 local CanniDecision         = require 'decision.actions.Canni'
 local CharmDecision         = require 'decision.actions.Charm'
+local LifeTapDecision       = require 'decision.actions.ShadowKnight'
 PackageMan.Require('lyaml')
 PackageMan.Require('luafilesystem', 'lfs')
 --needs to be after lyaml by packageman
@@ -301,8 +302,6 @@ local function mainLoop()
     while mq.TLO.EverQuest.GameState() ~= 'INGAME' do
         mq.delay(500)
     end
-    -- Extra settle time for the actors system to be ready
-    mq.delay(2000)
 
     if not mq.TLO.Plugin("MQ2Nav").IsLoaded() then
         Logging.Error("[SRL] MQ2Nav is not loaded. Navigation features will be unavailable. Load it with: /plugin MQ2Nav")
@@ -324,6 +323,7 @@ local function mainLoop()
     local busService = Bus:new("SRL")
     local statusService = StatusService:new()
     GroupStatusWindow:setStatusService(statusService)
+    local danNetHpService = require('service.DanNetHpService'):new()
     ConfigEditorWindow:setConfig(config)
     busService.actor:on('char_status', function(sender, data)
         if data and data.data then statusService:update(data.data) end
@@ -410,6 +410,7 @@ local function mainLoop()
     ccDecision:setMelodyService(melodyService)
     local clericDecision  = ClericDecision:new(config)
     local giftOfMana      = GiftOfMana:new(config)
+    local twincastDecision = require('decision.actions.Twincast'):new(config)
     local wizardDecision  = WizardDecision:new(config)
     local shrinkDecision  = ShrinkDecision:new(config)
     local auraDecision    = AuraDecision:new(config, melodyService)
@@ -424,11 +425,17 @@ local function mainLoop()
     local memSwapDecision      = MemSwapDecision:new(config, castService)
     local canniDecision        = CanniDecision:new(config, castService)
     local charmDecision        = CharmDecision:new(config)
+    local lifeTapDecision      = LifeTapDecision:new(config)
+    lifeTapDecision:setCastService(castService)
     local assistAdvanceDecision = require('decision.actions.AssistAdvance'):new()
     local tankAssistDecision    = require('decision.actions.TankAssist'):new()
     local pullDecision          = require('decision.actions.Pull'):new(config)
     local regroupDecision       = require('decision.actions.Regroup'):new(config)
     local context = Context:new(config)
+    context:setStatusService(statusService)
+    context:setDanNetHpService(danNetHpService)
+    castService:setStatusService(statusService)
+    castService:setDanNetHpService(danNetHpService)
 
     CommandRegistry:setup(CommandBus, {
         combatController = combatController,
@@ -468,8 +475,10 @@ local function mainLoop()
         assistAdvanceDecision,
         tankAssistDecision,
         healDecision,
+        lifeTapDecision,
         clericDecision,
         giftOfMana,
+        twincastDecision,
         wizardDecision,
         cureDecision,
         hotDecision,
@@ -531,7 +540,6 @@ local function mainLoop()
             castService:clearQueue()
             cureService:reset()
             cureDecision:reset()
-            context.raidSpawnIdCache = {}
             busService.actor:broadcast('reset_buffs_for_me', { sender = mq.TLO.Me.Name() })
         end
 
@@ -553,7 +561,7 @@ local function mainLoop()
         --Process network replies and resolve promises
         local ctx = context:build(State)
         RunTime.ctx = ctx
-        if not ctx.dead then
+        if not State.flags.manualMode and not ctx.dead then
             local action = engine:evaluate(ctx)
             if action then
                 action:execute(ctx)
@@ -563,14 +571,16 @@ local function mainLoop()
         --resume any coroutines waiting on await
         scheduler:run()
 
-        buffService:update(ctx)
-        bufferController:update()
-        tradeService:update()
-        cureService:update()
-        melodyService:tick(ctx)
-        burnService:tick()
-        hpBenchService:tick(ctx)
-        healBenchService:tick(ctx)
+        if not State.flags.manualMode then
+            buffService:update(ctx)
+            bufferController:update()
+            tradeService:update()
+            cureService:update()
+            melodyService:tick(ctx)
+            burnService:tick()
+            hpBenchService:tick(ctx)
+            healBenchService:tick(ctx)
+        end
 
         -- Broadcast own status for the group status window
         local myStatus = {
@@ -591,6 +601,7 @@ local function mainLoop()
         }
         statusService:update(myStatus)
         busService.actor:broadcast('char_status', myStatus)
+        danNetHpService:ensureObservers()
 
         mq.delay(50)
 

@@ -37,6 +37,7 @@ end
 function CommandRegistry:setup(commandBus, rt, config)
 
     commandBus:register('Camp', function(payload)
+        if not senderInRange(payload, config) then return end
         local x, y, z = tonumber(payload.x), tonumber(payload.y), tonumber(payload.z)
         if not x or not y or not z then return end
         State:setCamp(x, y, z)
@@ -45,6 +46,7 @@ function CommandRegistry:setup(commandBus, rt, config)
     end)
 
     commandBus:register('ClearCamp', function(payload)
+        if not senderInRange(payload, config) then return end
         State:clearCamp()
         print(string.format('[SRL] Camp cleared (from %s)', tostring(payload.sender)))
     end)
@@ -145,6 +147,18 @@ function CommandRegistry:setup(commandBus, rt, config)
         mq.cmd('/nav stop')
         mq.cmd('/stopcast')
         mq.cmd('/target clear')
+    end)
+
+    commandBus:register('ToggleManualMode', function()
+        State.flags.manualMode = not State.flags.manualMode
+        if State.flags.manualMode then
+            State:clearCombatState()
+            mq.cmd('/attack off')
+            mq.cmd('/stick off')
+            mq.cmd('/nav stop')
+            mq.cmd('/stopcast')
+        end
+        print(string.format('[SRL] Manual mode: %s', State.flags.manualMode and 'ON (automation suspended)' or 'OFF'))
     end)
 
     commandBus:register('AEOn', function(payload)
@@ -599,7 +613,8 @@ function CommandRegistry:setup(commandBus, rt, config)
         local targetId = tonumber(payload.id)
         if not targetId or targetId == 0 then return end
         if not mq.TLO.Spawn('id ' .. targetId)() then return end
-        rt.cureDecision:addRequest(payload.id, payload.name, payload.types, payload.buff)
+        local types = payload.types and payload.types:gsub('_', ' ') or payload.types
+        rt.cureDecision:addRequest(payload.id, payload.name, types, payload.buff)
     end)
 
     commandBus:register('MoveToTarget', function(payload)
@@ -923,16 +938,6 @@ function CommandRegistry:setup(commandBus, rt, config)
 
             mq.cmd('/keypress HAIL')
         end)
-    end)
-
-    commandBus:register('AEOn', function()
-        State.flags.aeEnabled = true
-        print('[SRL] AE: enabled')
-    end)
-
-    commandBus:register('AEOff', function()
-        State.flags.aeEnabled = false
-        print('[SRL] AE: disabled')
     end)
 
     commandBus:register('ExpMode', function(payload)
