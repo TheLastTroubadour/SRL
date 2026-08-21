@@ -6,7 +6,6 @@ local SpellUtil  = require 'util.SpellUtil'
 local AssistUtil = require 'util.AssistUtil'
 
 local STUCK_TIMEOUT_MS = 15000
-local HEALER_CLASSES = { CLR = true, SHM = true, DRU = true }
 
 -- Active KissAssist-style puller: finds an untagged mob near camp, tags it,
 -- drags it back to camp, and hands off to the raid via the same Assist event
@@ -31,11 +30,14 @@ function PullDecision:new(config)
     return self
 end
 
--- Any healer below Pull.HealerMedThreshold holds off the NEXT pull -- doesn't
--- touch a pull already in flight, just stops the puller from starting a new one.
+-- Any group member (including the puller itself) below Pull.HealerMedThreshold
+-- on mana OR endurance -- whichever resource their class actually has, see the
+-- MaxMana/MaxEndurance gating in CombatContext.lua -- holds off the NEXT pull.
+-- Doesn't touch a pull already in flight, just stops the puller from starting
+-- a new one.
 -- Hysteresis: once a hold is active, require the higher HealerMedResumeThreshold
 -- (not just the trigger threshold) before clearing it -- otherwise the puller
--- would resume the instant mana ticks back over 30% while the med break
+-- would resume the instant a resource ticks back over 30% while the med break
 -- (which rests everyone toward 100%) is still in progress.
 function PullDecision:healersReady(ctx)
     local threshold = self.healerHold
@@ -43,7 +45,10 @@ function PullDecision:healersReady(ctx)
         or (self.config:get('Pull.HealerMedThreshold') or 30)
 
     for _, member in ipairs(ctx.groupMembers or {}) do
-        if HEALER_CLASSES[member.class] and member.mana and member.mana < threshold then
+        if member.mana and member.mana < threshold then
+            return false, member.name
+        end
+        if member.endurance and member.endurance < threshold then
             return false, member.name
         end
     end
@@ -82,7 +87,7 @@ function PullDecision:score(ctx)
         if not ready then
             if not self.healerHold then
                 self.healerHold = true
-                print(string.format('[SRL] Pull: holding, %s is low on mana -- calling med break', tostring(lowName)))
+                print(string.format('[SRL] Pull: holding, %s is low on mana/endurance -- calling med break', tostring(lowName)))
                 local me = mq.TLO.Me.Name()
                 mq.cmdf('/dgze /srlevent MedFull sender=%s', me)
                 mq.cmdf('/srlevent MedFull sender=%s', me)
@@ -92,6 +97,13 @@ function PullDecision:score(ctx)
         if self.healerHold then
             self.healerHold = false
             print('[SRL] Pull: healer mana recovered, resuming')
+            -- MedFull forces sitting until ResourceDecision's own stopThreshold
+            -- (100%), well above our resume threshold (default 90%) -- without
+            -- this, Pull would start dragging a new mob back while people are
+            -- still explicitly forced to sit.
+            local me = mq.TLO.Me.Name()
+            mq.cmdf('/dgze /srlevent MedOff sender=%s', me)
+            mq.cmdf('/srlevent MedOff sender=%s', me)
         end
 
         local candidate = self:findPullTarget(ctx)

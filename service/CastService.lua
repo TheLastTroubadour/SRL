@@ -30,6 +30,7 @@ function CastService:new(scheduler, combatService)
     self.currentlyInFlight = nil
     self.lockedGems = {}
     self.lastInterruptAt = 0
+    self.lastGemCastAt = {} -- [gemNumber] = gettime() of last /cast issued from that gem
     self:startWorker()
 
     return self
@@ -491,7 +492,16 @@ function CastService:srlCast(job)
     Logging.Debug("Cast Util Export SRL Cast Start")
     self:memSpellIfNeeded(job)
     if not mq.TLO.Me.SpellReady(job.name)() then
-        mq.delay(2000, function() return mq.TLO.Me.SpellReady(job.name)() end)
+        -- Wait long enough to cover the spell's own recast/gem-refresh window
+        -- (a spell that was just swapped into this gem, or just cast, may not
+        -- show ready for several seconds) -- fixed 2000ms was too short for
+        -- some spells, causing the cast to silently give up and never fire.
+        -- Capped so a genuinely long-cooldown spell (minutes) doesn't block
+        -- the whole script for that long; it just won't be ready in time and
+        -- the job falls through as before.
+        local recastMs = (mq.TLO.Spell(job.name).RecastTime.TotalSeconds() or 0) * 1000
+        local waitMs = math.min(math.max(recastMs, 2000), 8000)
+        mq.delay(waitMs, function() return mq.TLO.Me.SpellReady(job.name)() end)
     end
     local isSpellReady = mq.TLO.Me.SpellReady(job.name)()
     Logging.Debug(("Is spell ready %s --- %s "):format(job.name, tostring(isSpellReady)))
@@ -500,7 +510,11 @@ function CastService:srlCast(job)
             return "BAD_TARGET_ID"
         end
 
-        if mq.TLO.Target.ID() ~= job.targetId then
+        -- Self-only spells land on the caster regardless of current target in
+        -- EQ -- no need to retarget self, which would otherwise needlessly
+        -- knock a mid-combat character off its actual assist/combat target.
+        local isSelfCast = job.targetId == mq.TLO.Me.ID()
+        if not isSelfCast and mq.TLO.Target.ID() ~= job.targetId then
             Target:getTargetById(job.targetId)
         end
         mq.cmd("/stick off")
@@ -513,6 +527,7 @@ function CastService:srlCast(job)
             mq.cmdf('/dga all /echo [SRL] %s healing %s with %s', mq.TLO.Me.Name(), job.targetName or '?', job.name)
         end
 
+        self.lastGemCastAt[tonumber(gem)] = mq.gettime()
         mq.cmdf('/cast %s', gem)
         mq.delay(1000, function() return mq.TLO.Me.Casting() ~= nil end)
         -- Main loop is blocked during mq.delay, so broadcast casting status now

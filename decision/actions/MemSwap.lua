@@ -76,6 +76,20 @@ function MemSwapDecision:score(ctx)
             end
             local wanted = entry._resolvedName
             local current = mq.TLO.Me.Gem(entry.gem)()
+
+            -- Don't yank a spell out of this gem while it's still settling in
+            -- its own post-cast recast/gem-refresh window -- e.g. a self-buff
+            -- that was just cast here can otherwise get swapped away before it
+            -- even registers as landed, which then makes whatever wanted it
+            -- re-request the gem, fight MemSwap for it again, and repeat.
+            local lastCast = self.castService.lastGemCastAt[entry.gem]
+            if lastCast then
+                local recastMs = (mq.TLO.Spell(current).RecastTime.TotalSeconds() or 0) * 1000
+                if mq.gettime() - lastCast < recastMs then
+                    goto continueEntry
+                end
+            end
+
             if current ~= wanted
                     and not self:isSpellNeeded(current)
                     and not self.castService:isGemLocked(entry.gem)
@@ -84,6 +98,7 @@ function MemSwapDecision:score(ctx)
                 print(string.format("[SRL] MemSwap: gem %d has \"%s\", wants \"%s\"",
                     entry.gem, tostring(current), wanted))
             end
+            ::continueEntry::
         end
     end
 

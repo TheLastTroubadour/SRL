@@ -174,13 +174,31 @@ function Context:build(state)
 
     -- Group member list (self + live group members); used by Rez/Heal/Shrink/Pull/etc.
     ctx.groupMembers = {}
-    table.insert(ctx.groupMembers, { id = ctx.myId, name = ctx.myName, hp = ctx.hp, mana = ctx.mana, class = ctx.myClass, dead = false })
+    -- mana/endurance only set when the class actually has that resource pool
+    -- (e.g. a Warrior's MaxMana is 0) -- otherwise a 0-pool class would always
+    -- read as "critically low" and permanently block things like Pull's med hold.
+    table.insert(ctx.groupMembers, {
+        id        = ctx.myId,
+        name      = ctx.myName,
+        hp        = ctx.hp,
+        mana      = (mq.TLO.Me.MaxMana() or 0) > 0 and ctx.mana or nil,
+        endurance = (mq.TLO.Me.MaxEndurance() or 0) > 0 and ctx.endurance or nil,
+        class     = ctx.myClass,
+        dead      = false,
+    })
     local gCount = mq.TLO.Group.Members()
     for i = 1, gCount do
         local m = mq.TLO.Group.Member(i)
         if m() and m.Spawn() and not m.Dead() then
-            table.insert(ctx.groupMembers, { id = m.ID(), name = m.CleanName(), hp = m.PctHPs(),
-                mana = m.PctMana(), class = m.Class.ShortName(), dead = false })
+            table.insert(ctx.groupMembers, {
+                id        = m.ID(),
+                name      = m.CleanName(),
+                hp        = m.PctHPs(),
+                mana      = (m.MaxMana() or 0) > 0 and m.PctMana() or nil,
+                endurance = (m.MaxEndurance() or 0) > 0 and m.PctEndurance() or nil,
+                class     = m.Class.ShortName(),
+                dead      = false,
+            })
         end
     end
 
