@@ -1,5 +1,6 @@
 local mq  = require 'mq'
 local Job = require 'model.Job'
+local SpellUtil = require 'util.SpellUtil'
 
 -- Self-heal lifetap for SHD, matching the old KissAssist Heals|Tap behavior:
 -- cast on self whenever own HP drops below ShadowKnight.LifeTapThreshold.
@@ -30,6 +31,7 @@ function LifeTapDecision:score(ctx)
 
     local spellName = self.config:get('ShadowKnight.LifeTap')
     if not spellName or spellName == '' then return 0 end
+    spellName = SpellUtil.resolveRank(spellName, 'spell')
 
     -- Needs a gem to memorize into on demand -- unlike a plain nuke, we can't
     -- just skip casting if it happens not to already be memmed somewhere.

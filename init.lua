@@ -410,7 +410,6 @@ local function mainLoop()
     ccDecision:setMelodyService(melodyService)
     local clericDecision  = ClericDecision:new(config)
     local giftOfMana      = GiftOfMana:new(config)
-    local twincastDecision = require('decision.actions.Twincast'):new(config)
     local wizardDecision  = WizardDecision:new(config)
     local shrinkDecision  = ShrinkDecision:new(config)
     local auraDecision    = AuraDecision:new(config, melodyService)
@@ -478,7 +477,6 @@ local function mainLoop()
         lifeTapDecision,
         clericDecision,
         giftOfMana,
-        twincastDecision,
         wizardDecision,
         cureDecision,
         hotDecision,

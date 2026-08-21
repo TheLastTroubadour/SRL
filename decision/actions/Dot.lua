@@ -1,6 +1,7 @@
 local mq    = require 'mq'
 local State = require 'core.State'
 local Target = require 'service.TargetService'
+local SpellUtil = require 'util.SpellUtil'
 local DotDecision = {}
 DotDecision.__index = DotDecision
 
@@ -108,15 +109,19 @@ function DotDecision:execute(ctx)
 
         mq.cmdf('/useitem "%s"', dot.spell)
     else
-        if not mq.TLO.Me.SpellReady(dot.spell)() then return end
+        if not dot._resolvedName then
+            dot._resolvedName = SpellUtil.resolveRank(dot.spell, 'spell')
+        end
+        local name = dot._resolvedName
+        if not mq.TLO.Me.SpellReady(name)() then return end
 
-        local spell = mq.TLO.Spell(dot.spell)
+        local spell = mq.TLO.Spell(name)
         local duration = spell and spell.Duration.TotalSeconds() or 60
         self.retryTimer[k] = mq.gettime() + math.max((duration * 1000) - 18000, 30000)
 
         mq.cmd('/stick off')
         if mq.TLO.Navigation.Active() then mq.cmd('/nav stop') end
-        local gem = mq.TLO.Me.Gem(dot.spell)() or dot.gem
+        local gem = mq.TLO.Me.Gem(name)() or dot.gem
         if not gem then return end
         mq.cmdf('/cast %s', gem)
     end
@@ -131,7 +136,10 @@ function DotDecision:isEntryReady(key, dot)
         local item = mq.TLO.FindItem('=' .. dot.spell)
         return item() and (item.TimerReady() or 1) == 0
     else
-        return mq.TLO.Me.SpellReady(dot.spell)() == true
+        if not dot._resolvedName then
+            dot._resolvedName = SpellUtil.resolveRank(dot.spell, 'spell')
+        end
+        return mq.TLO.Me.SpellReady(dot._resolvedName)() == true
     end
 end
 

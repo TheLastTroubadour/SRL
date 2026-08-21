@@ -1,4 +1,5 @@
 local mq = require 'mq'
+local SpellUtil = require 'util.SpellUtil'
 
 local WizardDecision = {}
 WizardDecision.__index = WizardDecision
@@ -58,7 +59,8 @@ function WizardDecision:execute(ctx)
     if self.pending.type == 'aa' then
         mq.cmdf('/alt activate "%s"', self.pending.name)
     elseif self.pending.type == 'spell' then
-        local gem = mq.TLO.Me.Gem(self.pending.name)() or self.pending.gem
+        local name = self.pending._resolvedName or self.pending.name
+        local gem = mq.TLO.Me.Gem(name)() or self.pending.gem
         if not gem then return end
         self.lastCastName = self.pending.name
         mq.cmdf('/cast %s', gem)
@@ -70,12 +72,16 @@ function WizardDecision:isReady(entry)
     if entry.type == 'aa' then
         return mq.TLO.Me.AltAbilityReady(entry.name)() == true
     elseif entry.type == 'spell' then
-        if not mq.TLO.Me.SpellReady(entry.name)() then return false end
+        if not entry._resolvedName then
+            entry._resolvedName = SpellUtil.resolveRank(entry.name, 'spell')
+        end
+        local name = entry._resolvedName
+        if not mq.TLO.Me.SpellReady(name)() then return false end
         -- SpellReady only checks the short gem refresh timer, not the spell's long reuse
         -- timer. Track our own cast time and compare against the spell's recast time.
         local lastCast = self.castTimestamps[entry.name] or 0
         if lastCast > 0 then
-            local recastMs = mq.TLO.Spell(entry.name).RecastTime() or 0
+            local recastMs = mq.TLO.Spell(name).RecastTime() or 0
             if recastMs > 0 and (mq.gettime() - lastCast) < recastMs then
                 return false
             end

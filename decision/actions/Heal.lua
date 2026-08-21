@@ -10,6 +10,11 @@ HealDecision.__index = HealDecision
 
 local HEALER_ROLE = 'healer'
 
+local function hasTwincast()
+    return mq.TLO.Me.Buff('Twincast')() ~= nil
+        or mq.TLO.Me.Song('Twincast')() ~= nil
+end
+
 function HealDecision:new(config)
     local self = setmetatable({}, HealDecision)
     self.config = config
@@ -135,6 +140,28 @@ function HealDecision:score(ctx)
             if score > bestScore then
                 local heal = self:selectHealSpell(t, ctx.self.heal.spells, projectedHp)
                 if heal then
+                    -- Twincast up: use the flagged spell on whichever target normal
+                    -- tier/threshold logic already picked, instead of burning the
+                    -- double-effect on whatever selectHealSpell would've chosen.
+                    -- Only swap if it's actually ready right now -- if not, don't
+                    -- wait around for it, just keep the normal pick.
+                    if hasTwincast() then
+                        local roleSpells = ctx.self.heal.spells[t.role] or ctx.self.heal.spells['normal']
+                        if roleSpells then
+                            for _, candidate in ipairs(roleSpells) do
+                                if candidate.twincast then
+                                    if not candidate._rspell then
+                                        candidate._rspell = SpellUtil.resolveRank(candidate.spell, 'spell')
+                                    end
+                                    if mq.TLO.Me.SpellReady(candidate._rspell or candidate.spell)() then
+                                        heal = candidate
+                                    end
+                                    break
+                                end
+                            end
+                        end
+                    end
+
                     -- Lazy-resolve rank once; same pattern as HoTDecision
                     if not heal._rspell then
                         heal._rspell = SpellUtil.resolveRank(heal.spell, 'spell')

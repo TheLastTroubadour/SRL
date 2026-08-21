@@ -1,5 +1,6 @@
 local mq = require 'mq'
 local Target = require 'service.TargetService'
+local SpellUtil = require 'util.SpellUtil'
 
 local ShrinkDecision = {}
 ShrinkDecision.__index = ShrinkDecision
@@ -78,8 +79,12 @@ function ShrinkDecision:execute(ctx)
         mq.cmdf('/alt activate "%s"', entry.name)
         mq.delay(1500)
     else
-        local gem = mq.TLO.Me.Gem(entry.name)() or entry.gem or 1
-        local castTime = (mq.TLO.Spell(entry.name).CastTime.TotalSeconds() or 1) * 1000 + 1500
+        if not entry._resolvedName then
+            entry._resolvedName = SpellUtil.resolveRank(entry.name, 'spell')
+        end
+        local name = entry._resolvedName
+        local gem = mq.TLO.Me.Gem(name)() or entry.gem or 1
+        local castTime = (mq.TLO.Spell(name).CastTime.TotalSeconds() or 1) * 1000 + 1500
         mq.cmdf('/cast %s', gem)
         mq.delay(1000, function() return mq.TLO.Me.Casting() ~= nil end)
         mq.delay(castTime, function() return not mq.TLO.Me.Casting() end)
@@ -94,7 +99,10 @@ function ShrinkDecision:getRange(entry)
     elseif entryType == 'aa' then
         spellName = mq.TLO.Me.AltAbility(entry.name).Spell.Name()
     else
-        spellName = entry.name
+        if not entry._resolvedName then
+            entry._resolvedName = SpellUtil.resolveRank(entry.name, 'spell')
+        end
+        spellName = entry._resolvedName
     end
 
     if not spellName then return 0 end
@@ -112,7 +120,10 @@ function ShrinkDecision:isReady(entry)
     elseif entryType == 'aa' then
         return mq.TLO.Me.AltAbilityReady(entry.name)() == true
     else
-        return mq.TLO.Me.SpellReady(entry.name)() == true
+        if not entry._resolvedName then
+            entry._resolvedName = SpellUtil.resolveRank(entry.name, 'spell')
+        end
+        return mq.TLO.Me.SpellReady(entry._resolvedName)() == true
     end
 end
 

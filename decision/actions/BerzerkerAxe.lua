@@ -1,4 +1,5 @@
 local mq = require 'mq'
+local SpellUtil = require 'util.SpellUtil'
 
 local BerzerkerAxeDecision = {}
 BerzerkerAxeDecision.__index = BerzerkerAxeDecision
@@ -71,6 +72,9 @@ function BerzerkerAxeDecision:score(ctx)
     end
 
     -- Check ability is ready
+    if not cfg._resolvedAbility then
+        cfg._resolvedAbility = SpellUtil.resolveRank(cfg.ability, cfg.type or 'disc')
+    end
     if not self:isReady(cfg) then return 0 end
 
     self.pending = cfg
@@ -81,33 +85,35 @@ function BerzerkerAxeDecision:execute(ctx)
     if not self.pending then return end
     local cfg = self.pending
     local entryType = cfg.type or 'disc'
+    local ability = cfg._resolvedAbility or cfg.ability
 
     if entryType == 'disc' then
-        mq.cmdf('/disc "%s"', cfg.ability)
-        local castTime = (mq.TLO.Spell(cfg.ability).CastTime.TotalSeconds() or 0) * 1000 + 500
+        mq.cmdf('/disc "%s"', ability)
+        local castTime = (mq.TLO.Spell(ability).CastTime.TotalSeconds() or 0) * 1000 + 500
         if castTime > 500 then
             mq.delay(castTime, function() return not mq.TLO.Me.Casting() end)
         end
     elseif entryType == 'aa' then
-        mq.cmdf('/alt activate "%s"', cfg.ability)
-        local castTime = mq.TLO.Me.AltAbility(cfg.ability).Spell.CastTime() or 0
+        mq.cmdf('/alt activate "%s"', ability)
+        local castTime = mq.TLO.Me.AltAbility(ability).Spell.CastTime() or 0
         if castTime > 0 then
             mq.delay(castTime + 500, function() return not mq.TLO.Me.Casting() end)
         end
     elseif entryType == 'ability' then
-        mq.cmdf('/doability "%s"', cfg.ability)
+        mq.cmdf('/doability "%s"', ability)
         mq.delay(1000)
     end
 end
 
 function BerzerkerAxeDecision:isReady(cfg)
     local entryType = cfg.type or 'disc'
+    local ability = cfg._resolvedAbility or cfg.ability
     if entryType == 'disc' then
-        return mq.TLO.Me.CombatAbilityReady(cfg.ability)() == true
+        return mq.TLO.Me.CombatAbilityReady(ability)() == true
     elseif entryType == 'aa' then
-        return mq.TLO.Me.AltAbilityReady(cfg.ability)() == true
+        return mq.TLO.Me.AltAbilityReady(ability)() == true
     elseif entryType == 'ability' then
-        return mq.TLO.Me.AbilityReady(cfg.ability)() == true
+        return mq.TLO.Me.AbilityReady(ability)() == true
     end
     return false
 end

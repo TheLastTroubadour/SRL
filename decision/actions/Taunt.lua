@@ -1,4 +1,5 @@
 local mq = require 'mq'
+local SpellUtil = require 'util.SpellUtil'
 
 local TANK_CLASSES = { WAR = true, SHD = true, PAL = true }
 
@@ -53,12 +54,13 @@ end
 function TauntDecision:execute(ctx)
     if not self.pending then return end
 
+    local name = self.pending._resolvedName or self.pending.name
     if self.pending.type == 'ability' then
-        mq.cmdf('/doability %s', self.pending.name)
+        mq.cmdf('/doability %s', name)
     elseif self.pending.type == 'aa' then
-        mq.cmdf('/alt activate "%s"', self.pending.name)
+        mq.cmdf('/alt activate "%s"', name)
     elseif self.pending.type == 'disc' then
-        mq.cmdf('/disc "%s"', self.pending.name)
+        mq.cmdf('/disc "%s"', name)
     end
 end
 
@@ -95,7 +97,10 @@ function TauntDecision:isReady(entry)
     elseif entry.type == 'aa' then
         return mq.TLO.Me.AltAbilityReady(entry.name)() == true
     elseif entry.type == 'disc' then
-        return mq.TLO.Me.CombatAbilityReady(entry.name)() == true
+        if not entry._resolvedName then
+            entry._resolvedName = SpellUtil.resolveRank(entry.name, 'disc')
+        end
+        return mq.TLO.Me.CombatAbilityReady(entry._resolvedName)() == true
     end
     return false
 end

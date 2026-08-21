@@ -1,6 +1,7 @@
 local mq    = require 'mq'
 local Job   = require 'model.Job'
 local State = require 'core.State'
+local SpellUtil = require 'util.SpellUtil'
 
 -- Fires Cannibalize when mana is below CanniManaThreshold and HP is safely
 -- above CanniHPThreshold so the HP sacrifice doesn't endanger the shaman.
@@ -54,6 +55,7 @@ function CanniDecision:score(ctx)
     if not spellName or spellName == '' then return 0 end
 
     local castType   = self.config:get('Shaman.CanniSpells.CanniType') or 'spell'
+    spellName = SpellUtil.resolveRank(spellName, castType)
     local manaThresh = self.config:get('Shaman.CanniManaThreshold') or 80
     local hpThresh   = self.config:get('Shaman.CanniHPThreshold')   or 70
 

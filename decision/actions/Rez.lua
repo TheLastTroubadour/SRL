@@ -1,5 +1,6 @@
 local mq = require 'mq'
 local Target = require 'service.TargetService'
+local SpellUtil = require 'util.SpellUtil'
 
 local RezDecision = {}
 RezDecision.__index = RezDecision
@@ -107,11 +108,12 @@ function RezDecision:execute(ctx)
     local spell = self.pendingSpell
 
     if spell.type == 'spell' then
-        local gem = mq.TLO.Me.Gem(spell.name)() or spell.gem
+        local name = spell._resolvedName or spell.name
+        local gem = mq.TLO.Me.Gem(name)() or spell.gem
         if not gem then return end
         mq.cmd('/stick off')
         mq.cmd('/nav stop')
-        local castTime = (mq.TLO.Spell(spell.name).CastTime.TotalSeconds() or 3) * 1000 + 1500
+        local castTime = (mq.TLO.Spell(name).CastTime.TotalSeconds() or 3) * 1000 + 1500
         mq.cmdf('/cast %s', gem)
         mq.delay(1000, function() return mq.TLO.Me.Casting() ~= nil end)
         mq.delay(castTime, function() return not mq.TLO.Me.Casting() end)
@@ -197,7 +199,10 @@ end
 
 function RezDecision:isReady(spell)
     if spell.type == 'spell' then
-        return mq.TLO.Me.SpellReady(spell.name)() == true
+        if not spell._resolvedName then
+            spell._resolvedName = SpellUtil.resolveRank(spell.name, 'spell')
+        end
+        return mq.TLO.Me.SpellReady(spell._resolvedName)() == true
     elseif spell.type == 'aa' then
         return mq.TLO.Me.AltAbilityReady(spell.name)() == true
     elseif spell.type == 'item' then

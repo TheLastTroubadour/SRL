@@ -5,6 +5,11 @@ local SpellUtil = require 'util.SpellUtil'
 local NukeDecision = {}
 NukeDecision.__index = NukeDecision
 
+local function hasTwincast()
+    return mq.TLO.Me.Buff('Twincast')() ~= nil
+        or mq.TLO.Me.Song('Twincast')() ~= nil
+end
+
 function NukeDecision:new(config)
     local self = setmetatable({}, NukeDecision)
     self.config = config
@@ -41,13 +46,6 @@ function NukeDecision:score(ctx)
     local hasGoM = mq.TLO.Me.Buff('Gift of Mana')() ~= nil
              or mq.TLO.Me.Song('Gift of Mana')() ~= nil
     if hasGoM then return 0 end
-
-    -- Same idea for Twincast -- let Twincast.lua land the configured
-    -- high-value spell instead of burning the double-cast on whatever's
-    -- next in normal rotation.
-    local hasTwincast = mq.TLO.Me.Buff('Twincast')() ~= nil
-             or mq.TLO.Me.Song('Twincast')() ~= nil
-    if hasTwincast then return 0 end
     if ctx.assist.distance and ctx.assist.distance > 200 then return 0 end
     if ctx.mana < 6 then return 0 end
 
@@ -141,6 +139,18 @@ end
 function NukeDecision:findReady(list, targetId, hp)
     if not list or #list == 0 then return nil end
 
+    -- Twincast-flagged entries: fire the instant Twincast is up and this spell
+    -- is ready, ahead of priority/round-robin -- don't wait around for it if
+    -- it's not ready yet, just fall through to the normal selection below.
+    if hasTwincast() then
+        for _, entry in ipairs(list) do
+            if entry.twincast then
+                entry:setTargetId(targetId)
+                if self:meetsHpCondition(entry, hp) and self:canUse(entry) then return entry end
+            end
+        end
+    end
+
     -- Buff-granting nukes: cast ahead of priority/round-robin if we're missing the buff
     for _, entry in ipairs(list) do
         if entry.checkFor then
@@ -232,6 +242,7 @@ function NukeDecision:getJobsFromKey(key, jobType)
             job.hpBelow        = v.hpBelow
             job.hpAbove        = v.hpAbove
             job.checkFor       = v.checkFor
+            job.twincast       = v.twincast
             table.insert(jobList, job)
         end
     end

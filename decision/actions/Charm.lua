@@ -1,6 +1,7 @@
 local mq     = require 'mq'
 local State  = require 'core.State'
 local Target = require 'service.TargetService'
+local SpellUtil = require 'util.SpellUtil'
 
 local CharmDecision = {}
 CharmDecision.__index = CharmDecision
@@ -29,6 +30,7 @@ function CharmDecision:score(ctx)
     local spellName = self.config:get('Charm.Spell')
     local gem       = tonumber(self.config:get('Charm.Gem'))
     if not spellName or not gem then return 0 end
+    spellName = SpellUtil.resolveRank(spellName, 'spell')
 
     local currentPetId = mq.TLO.Me.Pet.ID() or 0
 
@@ -62,7 +64,10 @@ function CharmDecision:score(ctx)
     if not self.petBuffsDone then
         local petBuffs = self.config:get('Charm.PetBuffs') or {}
         for _, buff in ipairs(petBuffs) do
-            if buff.spell and not mq.TLO.Me.Pet.Buff(buff.spell)() then
+            if buff.spell and (buff.type or 'spell'):lower() ~= 'aa' and not buff._resolvedSpell then
+                buff._resolvedSpell = SpellUtil.resolveRank(buff.spell, buff.type or 'spell')
+            end
+            if buff.spell and not mq.TLO.Me.Pet.Buff(buff._resolvedSpell or buff.spell)() then
                 self.mode        = 'petbuff'
                 self.pendingBuff = buff
                 return 45
@@ -102,7 +107,7 @@ function CharmDecision:execute(ctx)
             end
         else
             local gem = tonumber(buff.gem)
-            if gem and mq.TLO.Me.SpellReady(buff.spell)() then
+            if gem and mq.TLO.Me.SpellReady(buff._resolvedSpell or buff.spell)() then
                 mq.cmdf('/cast %d', gem)
             end
         end

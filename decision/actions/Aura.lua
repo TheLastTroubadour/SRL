@@ -1,4 +1,5 @@
 local mq = require 'mq'
+local SpellUtil = require 'util.SpellUtil'
 
 local AuraDecision = {}
 AuraDecision.__index = AuraDecision
@@ -27,7 +28,7 @@ function AuraDecision:score(ctx)
     local auraSpell = self.config:get('Aura.spell')
     if not auraSpell or auraSpell == '' then return 0 end
     local aura = {
-        spell = auraSpell,
+        spell = SpellUtil.resolveRank(auraSpell, self.config:get('Aura.type') or 'spell'),
         type  = self.config:get('Aura.type'),
         gem   = self.config:get('Aura.gem'),
     }

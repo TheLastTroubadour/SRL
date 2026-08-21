@@ -1,6 +1,7 @@
 local mq    = require 'mq'
 local State = require 'core.State'
 local Target = require 'service.TargetService'
+local SpellUtil = require 'util.SpellUtil'
 
 -- AEDecision: casts AE spells/discs/AAs when aggressive mob count in the area
 -- meets a configured threshold. Enabled/disabled in memory via /srl aeon|aeoff.
@@ -20,12 +21,22 @@ end
 
 -- AA display names don't always match their underlying spell name, so range/AERange
 -- lookups for 'aa' entries must resolve through Me.AltAbility(name).Spell rather than
--- assuming mq.TLO.Spell(entry.name) resolves directly.
+-- assuming mq.TLO.Spell(entry.name) resolves directly. For spell/disc entries, config
+-- often declares a base name while the character actually has a higher rank memmed/
+-- known -- resolve once and cache on the entry, same pattern as MemSwapDecision.
+-- NOTE: this is only for range/ready/cast lookups -- an 'aa' entry's own activation
+-- name (AltAbilityReady/"/alt activate") must stay entry.name, never this resolved
+-- underlying-spell name.
 local function resolveSpellName(entry)
+    if entry._resolvedName then return entry._resolvedName end
+    local resolved
     if entry.type == 'aa' then
-        return mq.TLO.Me.AltAbility(entry.name).Spell.Name()
+        resolved = mq.TLO.Me.AltAbility(entry.name).Spell.Name() or entry.name
+    else
+        resolved = SpellUtil.resolveRank(entry.name, entry.type)
     end
-    return entry.name
+    entry._resolvedName = resolved
+    return resolved
 end
 
 function AEDecision:score(ctx)
@@ -96,7 +107,7 @@ function AEDecision:execute(ctx)
         -- Targeted AE: require assist target within range, face it before casting
         if entry.targeted then
             if not (ctx.assist and ctx.assist.Id) then goto continueExec end
-            local maxRange = entry.maxRange or tonumber(mq.TLO.Spell(entry.name).Range()) or 150
+            local maxRange = entry.maxRange or tonumber(mq.TLO.Spell(resolveSpellName(entry)).Range()) or 150
             if (ctx.assist.distance or 999) > maxRange then goto continueExec end
             local targetId = tonumber(ctx.assist.Id)
             if mq.TLO.Target.ID() ~= targetId then
@@ -106,7 +117,8 @@ function AEDecision:execute(ctx)
         end
 
         if entry.type == 'spell' then
-            local gem = mq.TLO.Me.Gem(entry.name)() or entry.gem
+            local spellName = resolveSpellName(entry)
+            local gem = mq.TLO.Me.Gem(spellName)() or entry.gem
             if not gem then goto continueExec end
             -- Confirmed we can cast — stop any ongoing cast, then face and fire
             if mq.TLO.Me.Casting() then
@@ -125,20 +137,21 @@ function AEDecision:execute(ctx)
                     return diff < 10
                 end)
             end
-            local castTime = (mq.TLO.Spell(entry.name).CastTime.TotalSeconds() or 2) * 1000 + 1000
+            local castTime = (mq.TLO.Spell(spellName).CastTime.TotalSeconds() or 2) * 1000 + 1000
             mq.cmdf('/cast %s', gem)
             mq.delay(1000, function() return mq.TLO.Me.Casting() ~= nil end)
             mq.delay(castTime, function() return not mq.TLO.Me.Casting() end)
-            local recast = (mq.TLO.Spell(entry.name).RecastTime.TotalSeconds() or 0) * 1000
+            local recast = (mq.TLO.Spell(spellName).RecastTime.TotalSeconds() or 0) * 1000
             self.recastTimers[entry.name] = mq.gettime() + math.max(recast, 2000)
 
         elseif entry.type == 'disc' then
+            local discName = resolveSpellName(entry)
             if mq.TLO.Me.Casting() then
                 mq.cmd('/stopcast')
                 mq.delay(300, function() return not mq.TLO.Me.Casting() end)
             end
-            mq.cmdf('/disc "%s"', entry.name)
-            local castTime = (mq.TLO.Spell(entry.name).CastTime.TotalSeconds() or 0) * 1000 + 500
+            mq.cmdf('/disc "%s"', discName)
+            local castTime = (mq.TLO.Spell(discName).CastTime.TotalSeconds() or 0) * 1000 + 500
             if castTime > 500 then
                 mq.delay(castTime, function() return not mq.TLO.Me.Casting() end)
             end
@@ -163,9 +176,9 @@ end
 
 function AEDecision:isReady(entry)
     if entry.type == 'spell' then
-        return mq.TLO.Me.SpellReady(entry.name)() == true
+        return mq.TLO.Me.SpellReady(resolveSpellName(entry))() == true
     elseif entry.type == 'disc' then
-        return mq.TLO.Me.CombatAbilityReady(entry.name)() == true
+        return mq.TLO.Me.CombatAbilityReady(resolveSpellName(entry))() == true
     elseif entry.type == 'aa' then
         return mq.TLO.Me.AltAbilityReady(entry.name)() == true
     end
