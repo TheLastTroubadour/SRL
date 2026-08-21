@@ -5,6 +5,14 @@ local TableUtil = require 'util.TableUtil'
 local Context = {}
 Context.__index = Context
 
+-- WAR/MNK/ROG/BER have no mana pool at all. Everyone else (priests, pure
+-- casters, hybrids) does.
+local HAS_MANA_CLASS = {
+    CLR = true, DRU = true, SHM = true,
+    NEC = true, WIZ = true, MAG = true, ENC = true,
+    PAL = true, RNG = true, SHD = true, BST = true,
+}
+
 function Context:new(config)
     local self = setmetatable({}, Context)
     self.config = config
@@ -173,16 +181,21 @@ function Context:build(state)
     ctx.numberOfAggresiveInXTar = numberOfAggressive
 
     -- Group member list (self + live group members); used by Rez/Heal/Shrink/Pull/etc.
+    -- mana only included for classes that actually have a mana pool -- MaxMana()
+    -- is NOT a real GroupMember field (falls through to Spawn.MaxMana(), which is
+    -- only reliable for yourself; for other group members it can read back
+    -- garbage instead of a clean 0, so a real 0-mana melee class could spuriously
+    -- pass a "> 0" gate). Class is a real, always-correct GroupMember field, so
+    -- use that instead. PctMana()/PctEndurance() themselves ARE reliable for
+    -- group members (same live-percentage broadcast that makes PctHPs trustworthy),
+    -- it's only the Max* pool-size fields that fall back to unreliable spawn data.
     ctx.groupMembers = {}
-    -- mana/endurance only set when the class actually has that resource pool
-    -- (e.g. a Warrior's MaxMana is 0) -- otherwise a 0-pool class would always
-    -- read as "critically low" and permanently block things like Pull's med hold.
     table.insert(ctx.groupMembers, {
         id        = ctx.myId,
         name      = ctx.myName,
         hp        = ctx.hp,
-        mana      = (mq.TLO.Me.MaxMana() or 0) > 0 and ctx.mana or nil,
-        endurance = (mq.TLO.Me.MaxEndurance() or 0) > 0 and ctx.endurance or nil,
+        mana      = HAS_MANA_CLASS[ctx.myClass] and ctx.mana or nil,
+        endurance = ctx.endurance,
         class     = ctx.myClass,
         dead      = false,
     })
@@ -190,13 +203,14 @@ function Context:build(state)
     for i = 1, gCount do
         local m = mq.TLO.Group.Member(i)
         if m() and m.Spawn() and not m.Dead() then
+            local mClass = m.Class.ShortName()
             table.insert(ctx.groupMembers, {
                 id        = m.ID(),
                 name      = m.CleanName(),
                 hp        = m.PctHPs(),
-                mana      = (m.MaxMana() or 0) > 0 and m.PctMana() or nil,
-                endurance = (m.MaxEndurance() or 0) > 0 and m.PctEndurance() or nil,
-                class     = m.Class.ShortName(),
+                mana      = HAS_MANA_CLASS[mClass] and m.PctMana() or nil,
+                endurance = m.PctEndurance(),
+                class     = mClass,
                 dead      = false,
             })
         end

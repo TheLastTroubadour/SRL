@@ -1,22 +1,30 @@
 local mq     = require 'mq'
 local DanNet = require 'DanNet'
 
--- Sets up a persistent DanNet observer (${Me.PctHPs}) on every connected
--- DanNet peer's own client, not just configured tanks -- covers the whole
--- bot network automatically as people connect/disconnect. Unlike our own
--- char_status broadcast (gated behind each bot's main loop, which freezes
--- during mq.delay while that bot is mid-cast), DanNet's observer push is
--- driven by its own native plugin on the peer's end, so it isn't blocked by
--- whatever that peer's Lua script happens to be doing.
+-- Sets up persistent DanNet observers (${Me.PctHPs}/${Me.PctMana}/${Me.PctEndurance})
+-- on every connected DanNet peer's own client, not just configured tanks --
+-- covers the whole bot network automatically as people connect/disconnect.
+-- Unlike our own char_status broadcast (gated behind each bot's main loop,
+-- which freezes during mq.delay while that bot is mid-cast), DanNet's observer
+-- push is driven by its own native plugin on the peer's end, so it isn't
+-- blocked by whatever that peer's Lua script happens to be doing. And unlike
+-- Spawn.MaxMana/PctMana (unreliable for anyone but yourself -- not a real
+-- GroupMember field, falls through to spawn data), this is the peer
+-- self-reporting its own value, no reliability question at all.
 local DanNetHpService = {}
 DanNetHpService.__index = DanNetHpService
 
 local RESCAN_INTERVAL_MS = 30000
-local HP_QUERY = '${Me.PctHPs}'
+
+local QUERIES = {
+    hp        = '${Me.PctHPs}',
+    mana      = '${Me.PctMana}',
+    endurance = '${Me.PctEndurance}',
+}
 
 function DanNetHpService:new()
     local self = setmetatable({}, DanNetHpService)
-    self.observed  = {} -- [charName] = true once an observer is set up
+    self.observed  = {} -- [charName] = true once observers are set up
     self.lastScan  = 0
     return self
 end
@@ -42,16 +50,27 @@ function DanNetHpService:ensureObservers()
     for _, name in ipairs(self:getPeerNames()) do
         if not self.observed[name] then
             self.observed[name] = true
-            DanNet.create_observer(name, HP_QUERY, 0) -- timeout=0: fire /dobserve, don't block waiting on it
+            for _, query in pairs(QUERIES) do
+                DanNet.create_observer(name, query, 0) -- timeout=0: fire /dobserve, don't block waiting on it
+            end
         end
     end
 end
 
--- Cheap local read of the last-pushed value -- no network round-trip.
+-- Cheap local reads of the last-pushed values -- no network round-trip.
 function DanNetHpService:getHp(name)
     if not name or not self.observed[name] then return nil end
-    local value = DanNet.read_observer(name, HP_QUERY)
-    return tonumber(value)
+    return tonumber(DanNet.read_observer(name, QUERIES.hp))
+end
+
+function DanNetHpService:getMana(name)
+    if not name or not self.observed[name] then return nil end
+    return tonumber(DanNet.read_observer(name, QUERIES.mana))
+end
+
+function DanNetHpService:getEndurance(name)
+    if not name or not self.observed[name] then return nil end
+    return tonumber(DanNet.read_observer(name, QUERIES.endurance))
 end
 
 return DanNetHpService

@@ -30,9 +30,13 @@ function PullDecision:new(config)
     return self
 end
 
+function PullDecision:setDanNetHpService(danNetHpService)
+    self.danNetHpService = danNetHpService
+end
+
 -- Any group member (including the puller itself) below Pull.HealerMedThreshold
 -- on mana OR endurance -- whichever resource their class actually has, see the
--- MaxMana/MaxEndurance gating in CombatContext.lua -- holds off the NEXT pull.
+-- HAS_MANA_CLASS gating in CombatContext.lua -- holds off the NEXT pull.
 -- Doesn't touch a pull already in flight, just stops the puller from starting
 -- a new one.
 -- Hysteresis: once a hold is active, require the higher HealerMedResumeThreshold
@@ -45,14 +49,38 @@ function PullDecision:healersReady(ctx)
         or (self.config:get('Pull.HealerMedThreshold') or 30)
 
     for _, member in ipairs(ctx.groupMembers or {}) do
-        if member.mana and member.mana < threshold then
+        -- Prefer the DanNet-reported value (member self-reporting their own
+        -- mana/endurance, no reliability question) over the class-based
+        -- ctx.groupMembers reading when we have one.
+        local mana = (self.danNetHpService and self.danNetHpService:getMana(member.name)) or member.mana
+        local endurance = (self.danNetHpService and self.danNetHpService:getEndurance(member.name)) or member.endurance
+
+        if mana and mana < threshold then
+            self:debugDumpResource(member)
             return false, member.name
         end
-        if member.endurance and member.endurance < threshold then
+        if endurance and endurance < threshold then
+            self:debugDumpResource(member)
             return false, member.name
         end
     end
     return true
+end
+
+-- Diagnostic: dump the raw TLO reads that produced a hold, including the
+-- fields we DON'T trust (MaxMana/MaxEndurance -- not real GroupMember fields,
+-- fall through to Spawn data that's unreliable for anyone but yourself) next
+-- to what CombatContext actually used (class-based). Confirms or disproves
+-- the theory rather than assuming it.
+function PullDecision:debugDumpResource(member)
+    local spawn = mq.TLO.Spawn('id ' .. tostring(member.id))
+    print(string.format(
+        '[SRL] Pull: healersReady debug -- %s class=%s | used mana=%s endurance=%s | raw Spawn.MaxMana=%s Spawn.PctMana=%s Spawn.MaxEndurance=%s Spawn.PctEndurance=%s',
+        tostring(member.name), tostring(member.class),
+        tostring(member.mana), tostring(member.endurance),
+        tostring(spawn.MaxMana()), tostring(spawn.PctMana()),
+        tostring(spawn.MaxEndurance()), tostring(spawn.PctEndurance())
+    ))
 end
 
 function PullDecision:score(ctx)
