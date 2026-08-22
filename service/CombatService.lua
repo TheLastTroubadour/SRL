@@ -5,6 +5,7 @@ local Job = require 'model.Job'
 local TableUtil = require 'util.TableUtil'
 local TargetService = require 'service.TargetService'
 local SpellUtil = require 'util.SpellUtil'
+local MoveUtil = require 'util.MoveUtil'
 CombatService.__index = CombatService
 
 local IDLE_DELAY = 5000
@@ -34,7 +35,8 @@ function CombatService:setStickPoint(point)
 end
 
 function CombatService:setStickDist(dist)
-    self.stickDist = tonumber(dist) or self.stickDist
+    if dist == nil or dist == '' then return end
+    self.stickDist = dist
 end
 
 function CombatService:reloadSet(set)
@@ -202,7 +204,7 @@ function CombatService:assist()
 
     TargetService:getTargetById(targetId)
 
-    mq.cmdf('/stick %s %s moveback uw', self.stickPoint, self.stickDist)
+    mq.cmdf('/stick %s %s moveback uw', self.stickPoint, MoveUtil.resolveStickDist(self.stickDist, 10))
     if mq.TLO.Target.ID() ~= tonumber(targetId) then
         mq.delay(50, function() return mq.TLO.Target.ID() == tonumber(targetId) end)
     end

@@ -1,17 +1,14 @@
 local mq = require 'mq'
 local Target = require 'service.TargetService'
 local State  = require 'core.State'
+local MoveUtil = require 'util.MoveUtil'
 local AssistDecision = {}
 AssistDecision.__index = AssistDecision
 
 local KNOCKBACK_BUFFER = 20 -- yards beyond stick distance before we treat it as a knockback
 
 local function resolveStickDist(ctx)
-    local dist = ctx.assist.stickDistance
-    if tostring(dist):lower() == 'maxmelee' then
-        return (mq.TLO.Target.MaxMeleeTo() or 15) - 1
-    end
-    return tonumber(dist) or 10
+    return MoveUtil.resolveStickDist(ctx.assist.stickDistance, 10)
 end
 
 

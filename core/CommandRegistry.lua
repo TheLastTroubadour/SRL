@@ -328,10 +328,16 @@ function CommandRegistry:setup(commandBus, rt, config)
     end)
 
     commandBus:register('StickDist', function(payload)
-        local dist = tonumber(payload.dist)
-        if not dist or dist < 1 or dist > 200 then
-            print(string.format('[SRL] Invalid stickdist "%s". Must be a number between 1 and 200.', tostring(payload.dist)))
-            return
+        local raw = payload.dist
+        local dist
+        if tostring(raw):lower() == 'maxmelee' then
+            dist = 'maxmelee'
+        else
+            dist = tonumber(raw)
+            if not dist or dist < 1 or dist > 200 then
+                print(string.format('[SRL] Invalid stickdist "%s". Must be "maxmelee" or a number between 1 and 200.', tostring(raw)))
+                return
+            end
         end
         rt.combatService:setStickDist(dist)
         rt.context:setStickDist(dist)

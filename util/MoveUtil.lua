@@ -36,4 +36,15 @@ function MoveUtil.distanceToLoc(x, y)
     return math.sqrt(dx * dx + dy * dy)
 end
 
+-- Resolves a configured stick distance value, supporting the special
+-- "maxmelee" string (live target's actual max melee range, floored, minus a
+-- 1-yard buffer) alongside plain numeric distances.
+function MoveUtil.resolveStickDist(dist, fallback)
+    fallback = fallback or 10
+    if tostring(dist):lower() == 'maxmelee' then
+        return math.floor((mq.TLO.Target.MaxMeleeTo() or 15) - 1)
+    end
+    return tonumber(dist) or fallback
+end
+
 return MoveUtil

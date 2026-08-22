@@ -59,7 +59,8 @@ function Context:setStickPoint(point)
 end
 
 function Context:setStickDist(dist)
-    self.stickDistance = tonumber(dist) or self.stickDistance
+    if dist == nil or dist == '' then return end
+    self.stickDistance = dist
 end
 
 function Context:reloadSet(set)
