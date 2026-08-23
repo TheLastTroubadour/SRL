@@ -112,6 +112,12 @@ function HealDecision:score(ctx)
         for _, t in ipairs(targets) do
             if t.role ~= tier or not t.hp then goto continue end
 
+            -- 0% HP means dead, not "needs a heal desperately" -- without this
+            -- a dead target scores the maximum possible urgency (100 - 0 = 100)
+            -- and wins every tick forever, since a heal landing on a corpse
+            -- never actually raises their HP back off zero.
+            if t.hp <= 0 then goto continue end
+
             -- Trend-tracking is a tank thing: they eat sustained, repeated damage
             -- and the trend genuinely predicts more incoming. DPS just take an
             -- occasional single dip — feeding that through velocity/projection
@@ -231,7 +237,9 @@ function HealDecision:score(ctx)
         local threshold = topOff.threshold or 99
         if mq.TLO.Me.SpellReady(rspell)() then
             for _, t in ipairs(targets) do
-                if t.hp and t.hp < threshold and not t.dead then
+                -- t.dead is never actually set on any memberStatus entry --
+                -- this was always a no-op. t.hp > 0 is the real dead check.
+                if t.hp and t.hp > 0 and t.hp < threshold then
                     local healSpawn = mq.TLO.Spawn('id ' .. tostring(t.id))
                     local spellRange = tonumber(mq.TLO.Spell(rspell).Range()) or 200
                     if healSpawn() and not healSpawn.Dead() and (tonumber(healSpawn.Distance()) or 0) <= spellRange then
@@ -308,7 +316,9 @@ function HealDecision:checkGroupHeal(targets)
             if m() and not m.Dead() then
                 local hp   = m.PctHPs()
                 local dist = m.Distance() or 999
-                if hp and hp <= threshold and dist <= aeRange then
+                -- 0 HP means dead, not injured -- same direct HP backstop as
+                -- the tier-cascade loop above.
+                if hp and hp > 0 and hp <= threshold and dist <= aeRange then
                     injuredInRange = injuredInRange + 1
                     if tankSet[m.CleanName()] then tankInjured = true end
                 end
@@ -316,7 +326,7 @@ function HealDecision:checkGroupHeal(targets)
         end
     else
         for _, t in ipairs(targets) do
-            if t.hp and t.hp <= threshold then
+            if t.hp and t.hp > 0 and t.hp <= threshold then
                 local spawn = mq.TLO.Spawn('id ' .. tostring(t.id))
                 if spawn() and (spawn.Distance() or 999) <= aeRange then
                     injuredInRange = injuredInRange + 1

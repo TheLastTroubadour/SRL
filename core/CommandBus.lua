@@ -1,7 +1,8 @@
-local mq         = require 'mq'
-local State      = require 'core.State'
-local Help       = require 'core.Help'
-local AssistUtil = require 'util.AssistUtil'
+local mq            = require 'mq'
+local State         = require 'core.State'
+local Help          = require 'core.Help'
+local AssistUtil    = require 'util.AssistUtil'
+local BroadcastUtil = require 'util.BroadcastUtil'
 
 local CommandBus = {}
 CommandBus.handlers = {}
@@ -71,7 +72,8 @@ function CommandBus:matchesFilter(include, exclude, sender)
     return true
 end
 
-function CommandBus:init()
+function CommandBus:init(config)
+    self.config = config
     mq.unbind('/srlevent')
     local commandBus = self
     mq.bind('/srlevent', function(...)
@@ -592,17 +594,61 @@ function CommandBus:init()
             end
             print(string.format('[SRL] Automode: %s', State.flags.automode or 'OFF'))
 
+        elseif subcmd == 'broadcastscope' then
+            local scope = args[1] and args[1]:lower()
+            if not scope or scope == '' then
+                print(string.format('[SRL] Usage: /srl broadcastscope <group|zone|raid|all>  (current: %s)',
+                    State.flags.broadcastScope or (commandBus.config and commandBus.config:get('Automode.BroadcastScope')) or 'group'))
+                return
+            end
+            if scope == 'default' or scope == 'reset' then
+                State.flags.broadcastScope = nil
+            elseif not BroadcastUtil.SCOPE_PREFIX[scope] then
+                print(string.format('[SRL] Unknown broadcast scope "%s". Valid: group, zone, raid, all, default', scope))
+                return
+            else
+                State.flags.broadcastScope = scope
+            end
+            print(string.format('[SRL] Automode broadcast scope: %s',
+                State.flags.broadcastScope or (commandBus.config and commandBus.config:get('Automode.BroadcastScope')) or 'group'))
+
+        elseif subcmd == 'backgroundassist' then
+            local val = args[1] and args[1]:lower()
+            if not val or val == '' then
+                local configVal = commandBus.config and commandBus.config:get('General.BackgroundAssist')
+                local current = State.flags.backgroundAssist
+                if current == nil then current = (configVal == nil) or configVal end
+                print(string.format('[SRL] Usage: /srl backgroundassist <on|off|default>  (current: %s)',
+                    current and 'on' or 'off'))
+                return
+            end
+            if val == 'default' or val == 'reset' then
+                State.flags.backgroundAssist = nil
+            elseif val == 'on' or val == 'true' or val == '1' then
+                State.flags.backgroundAssist = true
+            elseif val == 'off' or val == 'false' or val == '0' then
+                State.flags.backgroundAssist = false
+            else
+                print(string.format('[SRL] Unknown value "%s". Valid: on, off, default', val))
+                return
+            end
+            local configVal = commandBus.config and commandBus.config:get('General.BackgroundAssist')
+            local current = State.flags.backgroundAssist
+            if current == nil then current = (configVal == nil) or configVal end
+            print(string.format('[SRL] Background assist (auto-follow assist while not foregrounded, outside automode): %s',
+                current and 'on' or 'off'))
+
         elseif subcmd == 'setcamp' then
             local me = mq.TLO.Me
             local x, y, z = me.X(), me.Y(), me.Z()
             State:setCamp(x, y, z)
-            mq.cmdf('/dgze /srlevent Camp x=%.2f y=%.2f z=%.2f sender=%s', x, y, z, me.Name())
-            print(string.format('[SRL] Camp set at %.1f, %.1f, %.1f (broadcast to raid)', x, y, z))
+            mq.cmdf('%s /srlevent Camp x=%.2f y=%.2f z=%.2f sender=%s', BroadcastUtil.prefix(commandBus.config), x, y, z, me.Name())
+            print(string.format('[SRL] Camp set at %.1f, %.1f, %.1f (broadcast)', x, y, z))
 
         elseif subcmd == 'clearcamp' then
             State:clearCamp()
-            mq.cmdf('/dgze /srlevent ClearCamp sender=%s', me)
-            print('[SRL] Camp cleared (broadcast to raid)')
+            mq.cmdf('%s /srlevent ClearCamp sender=%s', BroadcastUtil.prefix(commandBus.config), me)
+            print('[SRL] Camp cleared (broadcast)')
 
         elseif subcmd == 'count' then
             local peerString = mq.TLO.DanNet.Peers() or ''

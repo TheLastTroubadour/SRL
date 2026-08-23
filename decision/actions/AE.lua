@@ -150,7 +150,7 @@ function AEDecision:execute(ctx)
                 mq.cmd('/stopcast')
                 mq.delay(300, function() return not mq.TLO.Me.Casting() end)
             end
-            mq.cmdf('/disc "%s"', discName)
+            mq.cmdf('/disc %s', discName)
             local castTime = (mq.TLO.Spell(discName).CastTime.TotalSeconds() or 0) * 1000 + 500
             if castTime > 500 then
                 mq.delay(castTime, function() return not mq.TLO.Me.Casting() end)

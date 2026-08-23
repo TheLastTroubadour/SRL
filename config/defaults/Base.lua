@@ -2,7 +2,11 @@
 return {
     _version = 1,
     General = {
-        debugLevel = 'off'
+        debugLevel = 'off',
+        BackgroundAssist = true, -- when not in automode, still auto-follow the active assist target once this window loses foreground focus (stays hands-off while foregrounded either way)
+    },
+    Automode = {
+        BroadcastScope = 'group', -- group | zone | raid | all -- how far automode's own broadcasts travel (assist calls, med break, camp)
     },
     SwapItems = {
         Main=''
@@ -60,6 +64,7 @@ return {
         HealerMedThreshold = 30,        -- trigger a hold while any group healer's mana is below this
         HealerMedResumeThreshold = 90,  -- once holding, require this much before resuming (hysteresis)
         Spells = {},   -- ordered list: { spell=, type=, gem=, range= }; first ready+in-range wins, melee fallback if empty/none ready
+        CampDragDistance = 80, -- tank/tankpuller drifted (knockback etc.) this far from camp mid-fight -- nav back to camp instead of standing put
     },
     Regroup = {
         Distance   = 75,  -- trigger nav-to-camp once this far from camp while idle

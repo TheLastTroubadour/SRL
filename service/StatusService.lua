@@ -55,6 +55,17 @@ function StatusService:getHp(name)
     return entry.hp
 end
 
+-- Self-reported dead flag (Me.Dead() is always accurate for whoever's
+-- broadcasting it -- no null-spawn edge case like reading a group/raid
+-- member's Dead() off their possibly-gone spawn pointer). Returns nil
+-- (unknown, not confirmed alive) if we haven't heard from this peer recently.
+function StatusService:isDead(name)
+    local entry = self.peers[name]
+    if not entry then return nil end
+    if (mq.gettime() - entry.updatedAt) >= EXPIRY_MS then return nil end
+    return entry.dead == true
+end
+
 function StatusService:getAll()
     local now      = mq.gettime()
     local myZone   = mq.TLO.Zone.ShortName() or ''

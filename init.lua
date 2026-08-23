@@ -51,7 +51,6 @@ local DotDecision           = require 'decision.actions.Dot'
 local MemSwapDecision       = require 'decision.actions.MemSwap'
 local CanniDecision         = require 'decision.actions.Canni'
 local CharmDecision         = require 'decision.actions.Charm'
-local LifeTapDecision       = require 'decision.actions.ShadowKnight'
 PackageMan.Require('lyaml')
 PackageMan.Require('luafilesystem', 'lfs')
 --needs to be after lyaml by packageman
@@ -369,7 +368,8 @@ local function mainLoop()
         trustService  = trustService,
     })
 
-    CommandBus:init()
+    CommandBus:init(config)
+    require('util.AssistUtil').setConfig(config)
     combatService.commandBus = CommandBus
     combatService.roleService = RoleService
 
@@ -392,7 +392,7 @@ local function mainLoop()
 
     local resourceDecision = ResourceDecision:new(melodyService)
     local nukeDecision = NukeDecision:new(config)
-    local assistDecision = AssistDecision:new()
+    local assistDecision = AssistDecision:new(config)
     local healDecision = HealDecision:new(config)
     healDecision:setBus(busService)
     healDecision:setCastService(castService)
@@ -424,12 +424,12 @@ local function mainLoop()
     local memSwapDecision      = MemSwapDecision:new(config, castService)
     local canniDecision        = CanniDecision:new(config, castService)
     local charmDecision        = CharmDecision:new(config)
-    local lifeTapDecision      = LifeTapDecision:new(config)
-    lifeTapDecision:setCastService(castService)
     local assistAdvanceDecision = require('decision.actions.AssistAdvance'):new()
     local tankAssistDecision    = require('decision.actions.TankAssist'):new()
     local pullDecision          = require('decision.actions.Pull'):new(config)
     pullDecision:setDanNetHpService(danNetHpService)
+    pullDecision:setStatusService(statusService)
+    tankAssistDecision:setPullDecision(pullDecision)
     local regroupDecision       = require('decision.actions.Regroup'):new(config)
     local context = Context:new(config)
     context:setStatusService(statusService)
@@ -475,7 +475,6 @@ local function mainLoop()
         assistAdvanceDecision,
         tankAssistDecision,
         healDecision,
-        lifeTapDecision,
         clericDecision,
         giftOfMana,
         wizardDecision,
@@ -540,6 +539,11 @@ local function mainLoop()
             cureService:reset()
             cureDecision:reset()
             busService.actor:broadcast('reset_buffs_for_me', { sender = mq.TLO.Me.Name() })
+
+            if State.flags.automode then
+                print(string.format('[SRL] Zone changed while automode was "%s" -- turning it off', State.flags.automode))
+                State.flags.automode = nil
+            end
         end
 
         -- Detect death and notify peers to reset their buff cooldowns for us

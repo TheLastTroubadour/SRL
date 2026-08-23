@@ -103,6 +103,19 @@ function CastService:startWorker()
 
         while true do
             local ok, err = pcall(function()
+            -- Dead -- can't cast anything, and the queue can otherwise sit
+            -- around firing casts against stale/corpse data until we release
+            -- and come back alive. Drop everything queued and wait it out.
+            if mq.TLO.Me.Dead() then
+                if #self.queue > 0 then
+                    self.queue = {}
+                    self.queuedKeys = {}
+                end
+                self.currentlyInFlight = nil
+                mq.delay(200)
+                return
+            end
+
             for i = #self.queue, 1, -1 do
                 local job = self.queue[i]
                 if not job then

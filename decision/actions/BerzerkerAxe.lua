@@ -88,7 +88,7 @@ function BerzerkerAxeDecision:execute(ctx)
     local ability = cfg._resolvedAbility or cfg.ability
 
     if entryType == 'disc' then
-        mq.cmdf('/disc "%s"', ability)
+        mq.cmdf('/disc %s', ability)
         local castTime = (mq.TLO.Spell(ability).CastTime.TotalSeconds() or 0) * 1000 + 500
         if castTime > 500 then
             mq.delay(castTime, function() return not mq.TLO.Me.Casting() end)

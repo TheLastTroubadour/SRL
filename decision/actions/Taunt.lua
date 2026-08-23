@@ -39,12 +39,15 @@ function TauntDecision:score(ctx)
 
     -- If targeting another tank, don't taunt
     local totSpawn = mq.TLO.Spawn('id ' .. totId)
+    local totClass
     if totSpawn() then
-        local totClass = totSpawn.Class.ShortName()
+        totClass = totSpawn.Class.ShortName()
         if totClass and TANK_CLASSES[totClass] then return 0 end
     end
 
     local ability = self:findReady(false)
+    print(string.format('[SRL] Taunt: ToT=%s (%s) is not a tank -- reactive taunt %s',
+        tostring(totId), tostring(totClass), ability and (ability._resolvedName or ability.name) or 'NONE READY'))
     if not ability then return 0 end
 
     self.pending = ability
@@ -60,7 +63,7 @@ function TauntDecision:execute(ctx)
     elseif self.pending.type == 'aa' then
         mq.cmdf('/alt activate "%s"', name)
     elseif self.pending.type == 'disc' then
-        mq.cmdf('/disc "%s"', name)
+        mq.cmdf('/disc %s', name)
     end
 end
 

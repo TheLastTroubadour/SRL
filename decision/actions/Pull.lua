@@ -1,11 +1,13 @@
-local mq         = require 'mq'
-local State      = require 'core.State'
-local Target     = require 'service.TargetService'
-local MoveUtil   = require 'util.MoveUtil'
-local SpellUtil  = require 'util.SpellUtil'
-local AssistUtil = require 'util.AssistUtil'
+local mq            = require 'mq'
+local State         = require 'core.State'
+local Target        = require 'service.TargetService'
+local MoveUtil      = require 'util.MoveUtil'
+local SpellUtil     = require 'util.SpellUtil'
+local AssistUtil    = require 'util.AssistUtil'
+local BroadcastUtil = require 'util.BroadcastUtil'
 
 local STUCK_TIMEOUT_MS = 15000
+local NO_CANDIDATE_WARN_MS = 10000 -- throttle for the "no mobs found" print so idle re-checks every tick don't spam it
 
 -- Active KissAssist-style puller: finds an untagged mob near camp, tags it,
 -- drags it back to camp, and hands off to the raid via the same Assist event
@@ -34,6 +36,33 @@ function PullDecision:setDanNetHpService(danNetHpService)
     self.danNetHpService = danNetHpService
 end
 
+function PullDecision:setStatusService(statusService)
+    self.statusService = statusService
+end
+
+-- Won't start a new pull while anyone in the EQ group is dead -- dragging in
+-- another mob on top of a group that's already down a member just compounds
+-- the wipe. Uses the self-reported char_status broadcast (StatusService)
+-- rather than reading Dead() off our copy of their group-member spawn, since
+-- self-reported death doesn't depend on our own client's view of their spawn
+-- (out of range/zone, etc.) being current.
+function PullDecision:groupHasDead(ctx)
+    if ctx.dead then return true end
+    if not self.statusService then return false end
+
+    local gCount = mq.TLO.Me.GroupSize() or 0
+    for i = 1, gCount do
+        local m = mq.TLO.Group.Member(i)
+        if m() then
+            local name = m.CleanName()
+            if name and self.statusService:isDead(name) then
+                return true
+            end
+        end
+    end
+    return false
+end
+
 -- Any group member (including the puller itself) below Pull.HealerMedThreshold
 -- on mana OR endurance -- whichever resource their class actually has, see the
 -- HAS_MANA_CLASS gating in CombatContext.lua -- holds off the NEXT pull.
@@ -49,6 +78,10 @@ function PullDecision:healersReady(ctx)
         or (self.config:get('Pull.HealerMedThreshold') or 30)
 
     for _, member in ipairs(ctx.groupMembers or {}) do
+        -- Dead members never regen mana/endurance, so one stale low reading
+        -- would otherwise jam the hold forever.
+        if not member.hp or member.hp <= 0 then goto continueMember end
+
         -- Prefer the DanNet-reported value (member self-reporting their own
         -- mana/endurance, no reliability question) over the class-based
         -- ctx.groupMembers reading when we have one.
@@ -56,31 +89,15 @@ function PullDecision:healersReady(ctx)
         local endurance = (self.danNetHpService and self.danNetHpService:getEndurance(member.name)) or member.endurance
 
         if mana and mana < threshold then
-            self:debugDumpResource(member)
             return false, member.name
         end
         if endurance and endurance < threshold then
-            self:debugDumpResource(member)
             return false, member.name
         end
+
+        ::continueMember::
     end
     return true
-end
-
--- Diagnostic: dump the raw TLO reads that produced a hold, including the
--- fields we DON'T trust (MaxMana/MaxEndurance -- not real GroupMember fields,
--- fall through to Spawn data that's unreliable for anyone but yourself) next
--- to what CombatContext actually used (class-based). Confirms or disproves
--- the theory rather than assuming it.
-function PullDecision:debugDumpResource(member)
-    local spawn = mq.TLO.Spawn('id ' .. tostring(member.id))
-    print(string.format(
-        '[SRL] Pull: healersReady debug -- %s class=%s | used mana=%s endurance=%s | raw Spawn.MaxMana=%s Spawn.PctMana=%s Spawn.MaxEndurance=%s Spawn.PctEndurance=%s',
-        tostring(member.name), tostring(member.class),
-        tostring(member.mana), tostring(member.endurance),
-        tostring(spawn.MaxMana()), tostring(spawn.PctMana()),
-        tostring(spawn.MaxEndurance()), tostring(spawn.PctEndurance())
-    ))
 end
 
 function PullDecision:score(ctx)
@@ -107,7 +124,36 @@ function PullDecision:score(ctx)
     local isBard = ctx.myClass == 'BRD'
     if ctx.casting and not isBard then return 0 end
 
+    -- The idle-state MaxActive gate only stops a NEW pull from starting --
+    -- it doesn't re-check once one's already in flight. Without this, a mid-
+    -- cycle pull just keeps grinding through its own state machine no matter
+    -- how many other mobs pile up in the meantime (adds, chain aggro, etc.),
+    -- tunnel-visioned on its own candidate instead of ever yielding to help
+    -- fight what's already active. > not >= since a successful pull's own
+    -- candidate becoming aggressive is expected and shouldn't self-abort.
+    if self.state ~= 'idle' then
+        local maxActive = self.config:get('Pull.MaxActive') or 1
+        if (ctx.numberOfAggresiveInXTar or 0) > maxActive then
+            print(string.format('[SRL] Pull: %d mobs already aggressive mid-pull, aborting to help fight',
+                ctx.numberOfAggresiveInXTar))
+            self:abort()
+            return 0
+        end
+    end
+
     if self.state == 'idle' then
+        if self:groupHasDead(ctx) then
+            if not self.deadHold then
+                self.deadHold = true
+                print('[SRL] Pull: holding, a group member is dead')
+            end
+            return 0
+        end
+        if self.deadHold then
+            self.deadHold = false
+            print('[SRL] Pull: group member back up, resuming')
+        end
+
         local maxActive = self.config:get('Pull.MaxActive') or 1
         if (ctx.numberOfAggresiveInXTar or 0) >= maxActive then return 0 end
 
@@ -117,7 +163,7 @@ function PullDecision:score(ctx)
                 self.healerHold = true
                 print(string.format('[SRL] Pull: holding, %s is low on mana/endurance -- calling med break', tostring(lowName)))
                 local me = mq.TLO.Me.Name()
-                mq.cmdf('/dgze /srlevent MedFull sender=%s', me)
+                mq.cmdf('%s /srlevent MedFull sender=%s', BroadcastUtil.prefix(self.config), me)
                 mq.cmdf('/srlevent MedFull sender=%s', me)
             end
             return 0
@@ -130,7 +176,7 @@ function PullDecision:score(ctx)
             -- this, Pull would start dragging a new mob back while people are
             -- still explicitly forced to sit.
             local me = mq.TLO.Me.Name()
-            mq.cmdf('/dgze /srlevent MedOff sender=%s', me)
+            mq.cmdf('%s /srlevent MedOff sender=%s', BroadcastUtil.prefix(self.config), me)
             mq.cmdf('/srlevent MedOff sender=%s', me)
         end
 
@@ -193,6 +239,17 @@ function PullDecision:findPullTarget(ctx)
             end
         end
     end
+
+    if not bestId then
+        local now = mq.gettime()
+        if not self.lastNoCandidateWarn or now - self.lastNoCandidateWarn > NO_CANDIDATE_WARN_MS then
+            self.lastNoCandidateWarn = now
+            print(string.format(
+                '[SRL] Pull: no valid candidates (radius=%d zradius=%d loc %s %s %s) -- %d spawn(s) in radius, none usable (dead/already-aggressive/no path)',
+                radius, zRange, camp.y, camp.x, camp.z, count))
+        end
+    end
+
     return bestId
 end
 
@@ -332,6 +389,18 @@ function PullDecision:tickConfirmAggro(ctx)
     if aggroed or timedOut then
         mq.cmd('/attack off')
         mq.cmd('/stick off')
+
+        if timedOut and not aggroed and State.pull.camp then
+            -- Never got aggro before timing out -- likely stuck on broken
+            -- geometry (can't reach/see the candidate at all), same failure
+            -- mode as the return-to-camp nav gap. Warp straight back to camp
+            -- to reset rather than transitioning into 'returning' and hoping
+            -- nav can path out of the same stuck spot.
+            local camp = State.pull.camp
+            print('[SRL] Pull: stuck confirming aggro, warping back to camp')
+            mq.cmdf('/warp loc %s %s %s', camp.y, camp.x, camp.z)
+        end
+
         self.state = 'returning'
         self.stateStartTs = mq.gettime()
     end
@@ -355,7 +424,23 @@ function PullDecision:tickReturn(ctx)
 
     if not mq.TLO.Navigation.Active() then
         if not MoveUtil.navToLoc(camp.x, camp.y, camp.z, returnDist) then
-            print('[SRL] Pull: no path back to camp, aborting')
+            -- No mesh path at all -- usually means we're standing somewhere
+            -- off-mesh (clipped into geometry, e.g. under a staircase), so
+            -- ANY nav target would fail the same way, camp included. Warp
+            -- straight there (MQWarp bypasses collision/pathing entirely)
+            -- to reset the position instead of leaving the character stuck
+            -- in that same broken spot. Requires MQWarp.ini [Settings]
+            -- Enabled=1 -- if it's off, the warp silently no-ops and the
+            -- distance check below just falls through to the normal abort.
+            print('[SRL] Pull: no path back to camp, warping to reset')
+            mq.cmdf('/warp loc %s %s %s', camp.y, camp.x, camp.z)
+            mq.delay(200)
+            if MoveUtil.distanceToLoc(camp.x, camp.y) <= returnDist then
+                self.state = 'handoff'
+                self.stateStartTs = mq.gettime()
+                return
+            end
+            print('[SRL] Pull: warp failed (MQWarp disabled?), aborting')
             self:abort()
             return
         end

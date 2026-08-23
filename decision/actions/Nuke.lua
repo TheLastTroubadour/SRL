@@ -2,8 +2,17 @@ local Job = require 'model.Job'
 local mq = require 'mq'
 local Target = require 'service.TargetService'
 local SpellUtil = require 'util.SpellUtil'
+local State = require 'core.State'
 local NukeDecision = {}
 NukeDecision.__index = NukeDecision
+
+-- TODO: only covers automode tank/tankpuller -- a manually-played tank (or
+-- one in some other mode) still gets aggro-throttled. Better signal would be
+-- ctx.myCurrentTargetsTargetId == ctx.myId (mob's current target is me, same
+-- field Taunt.lua uses), which works regardless of automode. Not fixing now.
+local function isTank()
+    return State.flags.automode == 'tank' or State.flags.automode == 'tankpuller'
+end
 
 local function hasTwincast()
     return mq.TLO.Me.Buff('Twincast')() ~= nil
@@ -51,30 +60,45 @@ function NukeDecision:score(ctx)
 
     if not ctx.assist.lineOfSight then return 0 end
 
-    -- At or above lockout: jolts only, nothing if no jolt is ready
-    if ctx.aggro >= self.lockoutThreshold then
-        local jolt = self:findReadyJolt(ctx.aggro, ctx.assist.Id, ctx.assist.HP)
-        if jolt then
-            self.nuke = jolt
-            return 78
+    -- Aggro-based jolt/lockout throttling exists so DPS/casters back off
+    -- before pulling hate off the tank. The tank's own PctAggro is supposed
+    -- to sit near 100% the whole fight -- applying this same throttle to
+    -- them would silence their entire nuke rotation for as long as they're
+    -- actually tanking, so skip it entirely for the tank role.
+    if not isTank() then
+        -- At or above lockout: jolts only, nothing if no jolt is ready
+        if ctx.aggro >= self.lockoutThreshold then
+            local jolt = self:findReadyJolt(ctx.aggro, ctx.assist.Id, ctx.assist.HP)
+            if jolt then
+                self.nuke = jolt
+                return 78
+            end
+            return 0
         end
-        return 0
-    end
 
-    -- Above jolt threshold: use jolt only — do not fall back to nuking
-    if ctx.aggro > self.joltThreshold then
-        local jolt = self:findReadyJolt(ctx.aggro, ctx.assist.Id, ctx.assist.HP)
-        if jolt then
-            self.nuke = jolt
-            return 78
+        -- Above jolt threshold: use jolt only — do not fall back to nuking
+        if ctx.aggro > self.joltThreshold then
+            local jolt = self:findReadyJolt(ctx.aggro, ctx.assist.Id, ctx.assist.HP)
+            if jolt then
+                self.nuke = jolt
+                return 78
+            end
+            return 0
         end
-        return 0
     end
 
     -- Normal nuke
-    local nuke = self:findReady(self.nukeList, ctx.assist.Id, ctx.assist.HP)
+    local nuke = self:findReady(self.nukeList, ctx.assist.Id, ctx.assist.HP, ctx.hp)
     if nuke then
         self.nuke = nuke
+        -- Lifetap-type nukes (damage + self-heal) score above the normal
+        -- nuke tier once own HP is actually low enough for the self-heal
+        -- side to matter -- same tier as ShadowKnight.lua's dedicated
+        -- LifeTapDecision (88), for entries that require an enemy target
+        -- (can't just self-cast like that module does).
+        if nuke.selfHeal and (ctx.hp or 100) <= (nuke.selfHealThreshold or 70) then
+            return 88
+        end
         return 80
     end
 
@@ -136,8 +160,20 @@ function NukeDecision:findReadyJolt(aggro, targetId, hp)
     return self:findReady(self.joltList, targetId, hp)
 end
 
-function NukeDecision:findReady(list, targetId, hp)
+function NukeDecision:findReady(list, targetId, hp, selfHp)
     if not list or #list == 0 then return nil end
+
+    -- Lifetap-flagged entries: fire ahead of everything else once own HP
+    -- drops low enough that the self-heal side actually matters -- staying
+    -- alive outranks maximizing a Twincast window or topping off a buff.
+    if selfHp then
+        for _, entry in ipairs(list) do
+            if entry.selfHeal and selfHp <= (entry.selfHealThreshold or 70) then
+                entry:setTargetId(targetId)
+                if self:meetsHpCondition(entry, hp) and self:canUse(entry) then return entry end
+            end
+        end
+    end
 
     -- Twincast-flagged entries: fire the instant Twincast is up and this spell
     -- is ready, ahead of priority/round-robin -- don't wait around for it if
@@ -243,6 +279,8 @@ function NukeDecision:getJobsFromKey(key, jobType)
             job.hpAbove        = v.hpAbove
             job.checkFor       = v.checkFor
             job.twincast       = v.twincast
+            job.selfHeal          = v.selfHeal
+            job.selfHealThreshold = v.selfHealThreshold
             table.insert(jobList, job)
         end
     end
