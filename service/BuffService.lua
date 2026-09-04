@@ -252,6 +252,7 @@ function BuffService:getBuffInformationForKey(key)
                     local job = Job:new(targetId, character, spellName, jobType, 0, gem)
                     job.alwaysCheck = v.alwaysCheck or false
                     job.buffName = buffName
+                    job.checkFor = v.checkFor
                     job.range = v.range
                     table.insert(jobList, job)
                 end
@@ -260,6 +261,7 @@ function BuffService:getBuffInformationForKey(key)
                 local job = Job:new(characterId, mq.TLO.Me.Name(), spellName, jobType, 0, gem)
                 job.alwaysCheck = v.alwaysCheck or false
                 job.buffName = buffName
+                job.checkFor = v.checkFor
                 job.range = v.range
                 table.insert(jobList, job)
             end
@@ -336,6 +338,23 @@ function BuffService:handlePollPromise(target, buffEntry, promise)
             if alreadyHasBuff then
                 self.nextCheck[k] = now + 10000
                 return
+            end
+
+            -- checkFor: skip casting if a different/superseding buff is already
+            -- present (e.g. don't cast Aegolism on someone who already has the
+            -- superior "Ancient: Gift of Aegolism") -- mirrors Debuff.lua's checkBuff
+            if buffEntry.checkFor then
+                local hasAlt = freshSpawn.Buff('=' .. buffEntry.checkFor)() ~= nil
+                if not hasAlt then
+                    local altBase = buffEntry.checkFor:gsub('%s+Rk%.%s*%a+$', '')
+                    if altBase ~= buffEntry.checkFor then
+                        hasAlt = freshSpawn.Buff(altBase)() ~= nil
+                    end
+                end
+                if hasAlt then
+                    self.nextCheck[k] = now + 10000
+                    return
+                end
             end
 
             buffEntry.targetId = freshSpawn.ID()

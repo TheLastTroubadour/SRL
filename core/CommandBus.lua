@@ -598,7 +598,7 @@ function CommandBus:init(config)
             local scope = args[1] and args[1]:lower()
             if not scope or scope == '' then
                 print(string.format('[SRL] Usage: /srl broadcastscope <group|zone|raid|all>  (current: %s)',
-                    State.flags.broadcastScope or (commandBus.config and commandBus.config:get('Automode.BroadcastScope')) or 'group'))
+                    State.flags.broadcastScope or (commandBus.config and commandBus.config:get('Automode.BroadcastScope')) or 'zone'))
                 return
             end
             if scope == 'default' or scope == 'reset' then
@@ -610,12 +610,12 @@ function CommandBus:init(config)
                 State.flags.broadcastScope = scope
             end
             print(string.format('[SRL] Automode broadcast scope: %s',
-                State.flags.broadcastScope or (commandBus.config and commandBus.config:get('Automode.BroadcastScope')) or 'group'))
+                State.flags.broadcastScope or (commandBus.config and commandBus.config:get('Automode.BroadcastScope')) or 'zone'))
 
         elseif subcmd == 'backgroundassist' then
             local val = args[1] and args[1]:lower()
             if not val or val == '' then
-                local configVal = commandBus.config and commandBus.config:get('General.BackgroundAssist')
+                local configVal = commandBus.config and commandBus.config:get('AssistSettings.enabled')
                 local current = State.flags.backgroundAssist
                 if current == nil then current = (configVal == nil) or configVal end
                 print(string.format('[SRL] Usage: /srl backgroundassist <on|off|default>  (current: %s)',
@@ -632,10 +632,61 @@ function CommandBus:init(config)
                 print(string.format('[SRL] Unknown value "%s". Valid: on, off, default', val))
                 return
             end
-            local configVal = commandBus.config and commandBus.config:get('General.BackgroundAssist')
+            local configVal = commandBus.config and commandBus.config:get('AssistSettings.enabled')
             local current = State.flags.backgroundAssist
             if current == nil then current = (configVal == nil) or configVal end
             print(string.format('[SRL] Background assist (auto-follow assist while not foregrounded, outside automode): %s',
+                current and 'on' or 'off'))
+
+        elseif subcmd == 'mez' then
+            local val = args[1] and args[1]:lower()
+            if not val or val == '' then
+                local configVal = commandBus.config and commandBus.config:get('CrowdControl.Enabled')
+                local current = State.flags.mezEnabled
+                if current == nil then current = configVal == true end
+                print(string.format('[SRL] Usage: /srl mez <on|off|default>  (current: %s)',
+                    current and 'on' or 'off'))
+                return
+            end
+            if val == 'default' or val == 'reset' then
+                State.flags.mezEnabled = nil
+            elseif val == 'on' or val == 'true' or val == '1' then
+                State.flags.mezEnabled = true
+            elseif val == 'off' or val == 'false' or val == '0' then
+                State.flags.mezEnabled = false
+            else
+                print(string.format('[SRL] Unknown value "%s". Valid: on, off, default', val))
+                return
+            end
+            local configVal = commandBus.config and commandBus.config:get('CrowdControl.Enabled')
+            local current = State.flags.mezEnabled
+            if current == nil then current = configVal == true end
+            print(string.format('[SRL] Mezzing (CrowdControl): %s', current and 'on' or 'off'))
+
+        elseif subcmd == 'clearxtar' then
+            local val = args[1] and args[1]:lower()
+            if not val or val == '' then
+                local configVal = commandBus.config and commandBus.config:get('Automode.ClearXTarget')
+                local current = State.flags.clearXTarget
+                if current == nil then current = configVal == true end
+                print(string.format('[SRL] Usage: /srl clearxtar <on|off|default>  (current: %s)',
+                    current and 'on' or 'off'))
+                return
+            end
+            if val == 'default' or val == 'reset' then
+                State.flags.clearXTarget = nil
+            elseif val == 'on' or val == 'true' or val == '1' then
+                State.flags.clearXTarget = true
+            elseif val == 'off' or val == 'false' or val == '0' then
+                State.flags.clearXTarget = false
+            else
+                print(string.format('[SRL] Unknown value "%s". Valid: on, off, default', val))
+                return
+            end
+            local configVal = commandBus.config and commandBus.config:get('Automode.ClearXTarget')
+            local current = State.flags.clearXTarget
+            if current == nil then current = configVal == true end
+            print(string.format('[SRL] Auto chain-assist through remaining xtarget adds: %s',
                 current and 'on' or 'off'))
 
         elseif subcmd == 'setcamp' then

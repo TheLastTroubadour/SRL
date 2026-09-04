@@ -1,6 +1,7 @@
 local mq         = require 'mq'
 local State      = require 'core.State'
 local AssistUtil = require 'util.AssistUtil'
+local MoveUtil   = require 'util.MoveUtil'
 
 -- Automates what a human MA does by hand: target a mob, run /srl assiston.
 -- Fires whenever this bot's own target is a live hostile NPC the raid isn't
@@ -11,17 +12,33 @@ TankAssistDecision.__index = TankAssistDecision
 
 local REPULSE_MS = 30000 -- re-announce assist on the same target periodically, cheap safety net
 
-function TankAssistDecision:new()
+function TankAssistDecision:new(config)
     local self = setmetatable({}, TankAssistDecision)
     self.name = "TankAssistDecision"
+    self.config = config
     self.safeWhileInvis = true
     self.pendingId = nil
     self.lastBroadcastAt = 0
     return self
 end
 
-function TankAssistDecision:setPullDecision(pullDecision)
-    self.pullDecision = pullDecision
+-- Ground-truth check, independent of Pull.lua's own internal state tracking:
+-- is this candidate actually near camp with LoS on us? Pull's state can get
+-- out of sync with reality (aborts back to 'idle' on a mid-cycle safety net
+-- without the mob having gone anywhere -- see the mid-drag abort in Pull.lua),
+-- so gating solely on "Pull thinks it's still working on it" isn't reliable.
+-- No camp set at all means there's no camp concept in play -- don't gate.
+function TankAssistDecision:nearCampWithLoS(spawnId)
+    local camp = State.pull.camp
+    if not camp then return true end
+
+    local spawn = mq.TLO.Spawn('id ' .. tostring(spawnId))
+    if not spawn() then return false end
+    if not spawn.LineOfSight() then return false end
+
+    local returnDist = (self.config and self.config:get('Pull.ReturnDist')) or 15
+    local dist = MoveUtil.pathLengthToLoc(camp.x, camp.y, camp.z)
+    return dist ~= nil and dist <= returnDist
 end
 
 function TankAssistDecision:score(ctx)
@@ -30,20 +47,14 @@ function TankAssistDecision:score(ctx)
 
     local target = mq.TLO.Target
     local targetId = target.ID()
+    -- Camp/LoS check is part of what makes a target "usable" here, not a
+    -- separate early-out -- otherwise a stale/irrelevant current target that
+    -- fails it short-circuits before ever falling through to check whether
+    -- something else nearby (e.g. an already-mezzed add sitting at camp) is
+    -- actually ready to engage.
     local hasLiveTarget = targetId and targetId ~= 0
         and target.Type() == 'NPC' and not target.Dead() and target.Aggressive()
-
-    -- Pull.lua drags its candidate back to camp before handing off (tickReturn/
-    -- tickHandoff) -- but it aggroes and fights back out in the field well
-    -- before that (tickConfirmAggro). Without this check, this fires the
-    -- instant it's aggressive and broadcasts assist on a mob that's nowhere
-    -- near camp yet, pulling everyone else out to chase it there. Defer to
-    -- Pull's own handoff, which already waits for arrival + LoS.
-    if hasLiveTarget and self.pullDecision
-            and self.pullDecision.state ~= 'idle'
-            and self.pullDecision.candidateId == targetId then
-        return 0
-    end
+        and self:nearCampWithLoS(targetId)
 
     if not hasLiveTarget then
         -- Nothing useful targeted -- if something's already aggressive (an
@@ -72,16 +83,13 @@ function TankAssistDecision:score(ctx)
 end
 
 -- First aggressive NPC on xtarget that isn't already the active raid assist
--- target (that one's already being handled by AssistDecision) and isn't
--- Pull's own in-progress candidate (not at camp yet -- same reasoning as
--- the check in score()).
+-- target (that one's already being handled by AssistDecision) and is
+-- actually near camp with LoS -- see nearCampWithLoS.
 function TankAssistDecision:findUnclaimedAggressive(ctx)
-    local pullCandidateId = self.pullDecision and self.pullDecision.state ~= 'idle'
-        and self.pullDecision.candidateId or nil
     for _, xt in ipairs(ctx.xtargets or {}) do
         if xt.type == 'NPC' and not xt.dead and xt.aggressive
                 and tostring(xt.id) ~= tostring(State.assist.targetId)
-                and (not pullCandidateId or tostring(xt.id) ~= tostring(pullCandidateId)) then
+                and self:nearCampWithLoS(xt.id) then
             return xt.id
         end
     end

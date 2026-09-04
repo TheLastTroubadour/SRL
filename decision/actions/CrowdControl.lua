@@ -1,10 +1,18 @@
 local mq       = require 'mq'
 local Target   = require 'service.TargetService'
 local SpellUtil = require 'util.SpellUtil'
-
+local State    = require 'core.State'
 
 local CCDecision = {}
 CCDecision.__index = CCDecision
+
+-- In-memory override (/srl mezon|mezoff|mezdefault) always wins over config,
+-- same precedence pattern as backgroundAssistEnabled/broadcastScope -- lets
+-- mezzing be killed instantly at runtime without editing YAML + restarting.
+local function mezEnabled(config)
+    if State.flags.mezEnabled ~= nil then return State.flags.mezEnabled end
+    return config:get('CrowdControl.Enabled') == true
+end
 
 function CCDecision:new(config)
     local self = setmetatable({}, CCDecision)
@@ -63,7 +71,7 @@ function CCDecision:score(ctx)
     self.pendingAeTargets = {}
 
     if not ctx.roles['cc'] then return 0 end
-    if not self.config:get('CrowdControl.Enabled') then return 0 end
+    if not mezEnabled(self.config) then return 0 end
 
     -- Check result of previous mez cast once casting finishes
     if self.waitingForResult and (not ctx.casting or ctx.roles['bard']) then
@@ -146,6 +154,13 @@ function CCDecision:execute(ctx)
 
     if mq.TLO.Target.ID() ~= self.pendingTarget then
         Target:getTargetById(self.pendingTarget)
+        -- Without this, a target switched onto this same tick can read
+        -- Target.Mezzed() as nil simply because its buffs haven't populated
+        -- yet, not because the mez actually dropped, causing the authoritative
+        -- check below to needlessly recast on something that's still fine.
+        -- 2s cap (vs verifyMezzedTargets()'s 500ms) -- exits as soon as
+        -- BuffsPopulated flips true, this is just the worst-case wait.
+        mq.delay(2000, function() return mq.TLO.Target.ID() == self.pendingTarget and mq.TLO.Target.BuffsPopulated() == true end)
     end
 
     local spellName = self.pendingSpell._resolved or SpellUtil.resolveRank(self.pendingSpell.spell, 'spell')
@@ -212,6 +227,16 @@ function CCDecision:execute(ctx)
             end
         end
     else
+        -- Bard mez songs take roughly 0.5-2s after the cast finishes for the
+        -- effect to actually register on the target (Mezzed()/Moving() lag
+        -- behind the cast completing). Without this wait, score()'s very next
+        -- tick (which checks waitingForResult immediately for bards, not
+        -- gated on ctx.casting) sees the target still "Moving", wrongly
+        -- concludes the mez failed, clears self.mezzed[id], and triggers an
+        -- unnecessary /stopsong + recast on a mez that actually landed fine
+        -- -- confirmed live: it kept interrupting its own melody to redundantly
+        -- resing a mez that had already taken hold.
+        mq.delay(2000, function() return mq.TLO.Target.Mezzed() ~= nil or not mq.TLO.Target.Moving() end)
         self:resumeMelody()
     end
 end
@@ -389,7 +414,12 @@ function CCDecision:cleanMezTracker(assistId)
     end
 end
 
-local NOMEZ_FILE = 'config/srl/nomez.txt'
+-- Absolute path off mq.configDir -- a bare relative path here depended on
+-- whatever the process's current working directory happened to be at
+-- runtime, which isn't guaranteed to be the MacroQuest root (confirmed live:
+-- "could not write config/srl/nomez.txt"). Lives alongside settings.yaml in
+-- config/general -- it's shared/global state, not per-character.
+local NOMEZ_FILE = mq.configDir .. '\\srl\\config\\general\\nomez.txt'
 
 function CCDecision:loadImmuneSidecar()
     local f = io.open(NOMEZ_FILE, 'r')

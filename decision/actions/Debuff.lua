@@ -6,7 +6,10 @@ local DebuffDecision = {}
 DebuffDecision.__index = DebuffDecision
 
 local IMMUNE_BACKOFF_MS = 3600000  -- 1 hour; effectively skip for the session
-local NOSLOW_FILE = 'config/srl/noslow.txt'
+-- Absolute path off mq.configDir -- same relative-path bug as nomez.txt had
+-- (CrowdControl.lua), fixed the same way. Lives alongside settings.yaml in
+-- config/general -- it's shared/global state, not per-character.
+local NOSLOW_FILE = mq.configDir .. '\\srl\\config\\general\\noslow.txt'
 
 local RESIST_RETRY_MS = 3000  -- retry 3 seconds after a resist
 local LOS_RETRY_MS    = 3000  -- retry 3 seconds after a LoS-blocked bail -- without this,

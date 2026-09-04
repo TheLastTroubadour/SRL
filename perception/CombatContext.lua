@@ -12,6 +12,7 @@ local HAS_MANA_CLASS = {
     NEC = true, WIZ = true, MAG = true, ENC = true,
     PAL = true, RNG = true, SHD = true, BST = true,
 }
+Context.HAS_MANA_CLASS = HAS_MANA_CLASS -- exposed so other modules (Pull.lua) can gate DanNet mana fallbacks the same way
 
 function Context:new(config)
     local self = setmetatable({}, Context)
@@ -43,15 +44,21 @@ function Context:setDanNetHpService(danNetHpService)
     self.danNetHpService = danNetHpService
 end
 
--- DanNet observer HP first (peer's own native plugin push, not gated behind
--- their Lua script's mq.delay while mid-cast), falling back to our own
--- char_status broadcast (gated behind that bot's main loop). Never spawn HP.
+-- StatusService first -- it self-corrects every main-loop tick and explicitly
+-- expires after 15s of silence (see StatusService.EXPIRY_MS), so it can't
+-- silently freeze on a stale value. DanNet observers were tried first
+-- previously (their push isn't gated behind the peer's own Lua script being
+-- mid-cast in an mq.delay), but proved capable of getting stuck reporting a
+-- stale value indefinitely with no expiry of their own -- confirmed live:
+-- an observer kept reporting 50% for a peer who was actually at full HP.
+-- DanNet is now only the fallback, for a peer whose own script isn't
+-- running/reporting via StatusService at all. Never spawn HP.
 function Context:getPeerHp(name)
-    if self.danNetHpService then
-        local hp = self.danNetHpService:getHp(name)
+    if self.statusService then
+        local hp = self.statusService:getHp(name)
         if hp then return hp end
     end
-    return self.statusService and self.statusService:getHp(name)
+    return self.danNetHpService and self.danNetHpService:getHp(name)
 end
 
 function Context:setStickPoint(point)
@@ -127,7 +134,11 @@ function Context:build(state)
     ctx.myCurrentTargetId = mq.TLO.Target.ID()
 
     --Target of Current Target
-    ctx.myCurrentTargetsTargetId = mq.TLO.Target.TargetOfTarget.ID()
+    -- Me.TargetOfTarget (not Target.TargetOfTarget) is the TLO that actually
+    -- populates -- it returns the character/mob name as a string, so resolve
+    -- it through Spawn to get a usable id.
+    local totName = mq.TLO.Me.TargetOfTarget()
+    ctx.myCurrentTargetsTargetId = totName and mq.TLO.Spawn('=' .. totName).ID() or nil
 
     --target info
     ctx.assist.Id = State.assist.targetId
@@ -297,6 +308,46 @@ function Context:build(state)
                                 role    = role,
                                 inGroup = false,
                             })
+                        end
+                    end
+                end
+            end
+
+            -- DanNet peers not already captured above (self/group/raid) -- lets healing
+            -- work without a formal EQ raid, and covers the whole bot network
+            -- automatically as people connect/disconnect (same philosophy as
+            -- DanNetHpService:ensureObservers) instead of requiring every healer's
+            -- Tanks/ImportantBots list to enumerate who's out there. Heals.Tanks/
+            -- ImportantBots still matters -- getHealerRole cross-references it for
+            -- priority (tank/important), falling back to normal for anyone unlisted.
+            -- Peer-reported HP only (never spawn HP -- same staleness concern as raid
+            -- members above). Requiring a resolvable, live nearby spawn for id/range
+            -- doubles as the filter that keeps out peers who aren't actually in this
+            -- zone (different server/session/task) -- their spawn just won't resolve.
+            if self.danNetHpService then
+                for _, name in ipairs(self.danNetHpService:getPeerNames()) do
+                    if name and not seen[name] then
+                        local hp = self:getPeerHp(name)
+                        if hp then
+                            local spawn = mq.TLO.Spawn(name)
+                            if spawn() and not spawn.Dead() then
+                                -- DanNet peer names aren't guaranteed to match display
+                                -- casing (Me.Name()/CleanName()) -- re-derive the real
+                                -- name from the resolved spawn so seen[]/getHealerRole
+                                -- compare correctly against self and the properly-cased
+                                -- Heals.Tanks/ImportantBots entries.
+                                local canonicalName = spawn.CleanName() or name
+                                if not seen[canonicalName] then
+                                    seen[canonicalName] = true
+                                    table.insert(ctx.self.heal.group.memberStatus, {
+                                        id      = spawn.ID(),
+                                        name    = canonicalName,
+                                        hp      = hp,
+                                        role    = self:getHealerRole(canonicalName),
+                                        inGroup = false,
+                                    })
+                                end
+                            end
                         end
                     end
                 end

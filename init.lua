@@ -30,6 +30,7 @@ local Context = require 'perception.CombatContext'
 local DecisionEngine = require 'decision.DecisionEngine'
 local ResourceDecision = require 'decision.actions.Resource'
 local NukeDecision = require 'decision.actions.Nuke'
+local TwincastDecision = require 'decision.actions.Twincast'
 local AssistDecision = require 'decision.actions.Assist'
 local HealDecision = require 'decision.actions.Heal'
 local DebuffDecision = require 'decision.actions.Debuff'
@@ -392,6 +393,7 @@ local function mainLoop()
 
     local resourceDecision = ResourceDecision:new(melodyService)
     local nukeDecision = NukeDecision:new(config)
+    local twincastDecision = TwincastDecision:new(config, nukeDecision)
     local assistDecision = AssistDecision:new(config)
     local healDecision = HealDecision:new(config)
     healDecision:setBus(busService)
@@ -424,12 +426,11 @@ local function mainLoop()
     local memSwapDecision      = MemSwapDecision:new(config, castService)
     local canniDecision        = CanniDecision:new(config, castService)
     local charmDecision        = CharmDecision:new(config)
-    local assistAdvanceDecision = require('decision.actions.AssistAdvance'):new()
-    local tankAssistDecision    = require('decision.actions.TankAssist'):new()
+    local assistAdvanceDecision = require('decision.actions.AssistAdvance'):new(config)
+    local tankAssistDecision    = require('decision.actions.TankAssist'):new(config)
     local pullDecision          = require('decision.actions.Pull'):new(config)
     pullDecision:setDanNetHpService(danNetHpService)
     pullDecision:setStatusService(statusService)
-    tankAssistDecision:setPullDecision(pullDecision)
     local regroupDecision       = require('decision.actions.Regroup'):new(config)
     local context = Context:new(config)
     context:setStatusService(statusService)
@@ -471,6 +472,7 @@ local function mainLoop()
         ccDecision,
         debuffDecision,
         nukeDecision,
+        twincastDecision,
         assistDecision,
         assistAdvanceDecision,
         tankAssistDecision,

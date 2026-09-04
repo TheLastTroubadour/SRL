@@ -3,10 +3,9 @@ return {
     _version = 1,
     General = {
         debugLevel = 'off',
-        BackgroundAssist = true, -- when not in automode, still auto-follow the active assist target once this window loses foreground focus (stays hands-off while foregrounded either way)
     },
     Automode = {
-        BroadcastScope = 'group', -- group | zone | raid | all -- how far automode's own broadcasts travel (assist calls, med break, camp)
+        BroadcastScope = 'zone', -- group | zone | raid | all -- how far automode's own broadcasts travel (assist calls, med break, camp)
     },
     SwapItems = {
         Main=''
@@ -37,7 +36,7 @@ return {
         }
     },
     AssistSettings = {
-        enabled = 'true',
+        enabled = true, -- when not in automode, still auto-follow the active assist target once this window loses foreground focus (stays hands-off while foregrounded either way)
         type = 'melee',
         meleeStickDistance = 'MaxMelee',
         meleeStickPoint= 'Behind',
@@ -67,7 +66,7 @@ return {
         CampDragDistance = 80, -- tank/tankpuller drifted (knockback etc.) this far from camp mid-fight -- nav back to camp instead of standing put
     },
     Regroup = {
-        Distance   = 75,  -- trigger nav-to-camp once this far from camp while idle
+        Distance   = 30,  -- trigger nav-to-camp once this far from camp while idle
         ReturnDist = 15,  -- how close counts as "back"
     }
 }

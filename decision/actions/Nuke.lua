@@ -99,6 +99,17 @@ function NukeDecision:score(ctx)
         if nuke.selfHeal and (ctx.hp or 100) <= (nuke.selfHealThreshold or 70) then
             return 88
         end
+        -- Twincast is up and findReady picked this entry specifically because
+        -- it's flagged twincast: true (see findReady's twincast branch) --
+        -- score above Debuff's normal tier (82, Debuff.lua:124) so this cast
+        -- actually lands before the buff gets consumed by something else
+        -- ready the same tick (confirmed live: Mindfreeze was winning the
+        -- race and wasting the Twincast window). Still below Cure/HoT/Heal/
+        -- Cleric tiers and Debuff's own priority-flagged tier (115) --
+        -- not wasting a damage multiplier still isn't as important as those.
+        if nuke.twincast and hasTwincast() then
+            return 90
+        end
         return 80
     end
 
@@ -263,6 +274,28 @@ function NukeDecision:canUse(entry)
     local spell = mq.TLO.Spell(entry.name)
     if not spell() then return false end
     return mq.TLO.Me.SpellReady(entry.name)() == true
+end
+
+-- Used by TwincastDecision to check whether proactively casting Twincast right
+-- now is actually worth it -- same pre-conditions score() itself gates on
+-- (assist target, range, LoS, mana, aggro not maxed into jolt-lockout), so it
+-- doesn't fire in a situation where the flagged nuke couldn't be cast anyway.
+function NukeDecision:hasReadyTwincastEntry(ctx)
+    if not ctx.assist.Id then return false end
+    if ctx.assist.distance and ctx.assist.distance > 200 then return false end
+    if ctx.mana < 6 then return false end
+    if not ctx.assist.lineOfSight then return false end
+    if not isTank() and ctx.aggro >= self.lockoutThreshold then return false end
+
+    for _, entry in ipairs(self.nukeList or {}) do
+        if entry.twincast then
+            entry:setTargetId(ctx.assist.Id)
+            if self:meetsHpCondition(entry, ctx.assist.HP) and self:canUse(entry) then
+                return true
+            end
+        end
+    end
+    return false
 end
 
 function NukeDecision:getJobsFromKey(key, jobType)

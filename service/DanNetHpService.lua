@@ -17,14 +17,13 @@ DanNetHpService.__index = DanNetHpService
 local RESCAN_INTERVAL_MS = 30000
 
 local QUERIES = {
-    hp        = '${Me.PctHPs}',
-    mana      = '${Me.PctMana}',
-    endurance = '${Me.PctEndurance}',
+    hp        = 'Me.PctHPs',
+    mana      = 'Me.PctMana',
+    endurance = 'Me.PctEndurance',
 }
 
 function DanNetHpService:new()
     local self = setmetatable({}, DanNetHpService)
-    self.observed  = {} -- [charName] = true once observers are set up
     self.lastScan  = 0
     return self
 end
@@ -41,15 +40,22 @@ function DanNetHpService:getPeerNames()
     return names
 end
 
--- Rate-limited internally -- safe to call every tick.
+-- Rate-limited internally -- safe to call every tick. Re-issues (drop +
+-- recreate, see DanNet.create_observer) for every known peer on every scan,
+-- rather than latching "confirmed" after one successful read and stopping --
+-- a read succeeding only proves SOME value exists, never that it's still
+-- being actively refreshed (plugin-side observer entries can go stale/dead
+-- silently with no expiry of their own, confirmed live). Re-doing the drop+
+-- recreate periodically is what actually guards against that, since a plain
+-- re-/dobserve on an already-registered entry is a no-op either way.
 function DanNetHpService:ensureObservers()
     local now = mq.gettime()
     if now - self.lastScan < RESCAN_INTERVAL_MS then return end
     self.lastScan = now
 
+    local myName = mq.TLO.Me.Name():lower()
     for _, name in ipairs(self:getPeerNames()) do
-        if not self.observed[name] then
-            self.observed[name] = true
+        if name:lower() ~= myName then
             for _, query in pairs(QUERIES) do
                 DanNet.create_observer(name, query, 0) -- timeout=0: fire /dobserve, don't block waiting on it
             end
@@ -59,17 +65,17 @@ end
 
 -- Cheap local reads of the last-pushed values -- no network round-trip.
 function DanNetHpService:getHp(name)
-    if not name or not self.observed[name] then return nil end
+    if not name then return nil end
     return tonumber(DanNet.read_observer(name, QUERIES.hp))
 end
 
 function DanNetHpService:getMana(name)
-    if not name or not self.observed[name] then return nil end
+    if not name then return nil end
     return tonumber(DanNet.read_observer(name, QUERIES.mana))
 end
 
 function DanNetHpService:getEndurance(name)
-    if not name or not self.observed[name] then return nil end
+    if not name then return nil end
     return tonumber(DanNet.read_observer(name, QUERIES.endurance))
 end
 

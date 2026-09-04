@@ -36,6 +36,17 @@ function MoveUtil.distanceToLoc(x, y)
     return math.sqrt(dx * dx + dy * dy)
 end
 
+-- Real walkable path length to a raw {x=, y=, z=} point, not straight-line
+-- distance -- accounts for walls/elevation/detours the same way distanceToLoc
+-- can't (see findPullTarget's reasoning for picking path length over radial
+-- distance). Returns nil if no path exists at all (unreachable/no mesh).
+function MoveUtil.pathLengthToLoc(x, y, z)
+    local locStr = string.format('locxyz %s %s %s', x, y, z)
+    local len = mq.TLO.Navigation.PathLength(locStr)()
+    if not len or len <= 0 then return nil end
+    return len
+end
+
 -- Resolves a configured stick distance value, supporting the special
 -- "maxmelee" string (live target's actual max melee range, floored, minus a
 -- 1-yard buffer) alongside plain numeric distances.

@@ -18,8 +18,12 @@ function TauntDecision:score(ctx)
     self.pending = nil
 
     if ctx.casting then return 0 end
-    if not TANK_CLASSES[mq.TLO.Me.Class.ShortName()] then return 0 end
+
+    local myClass = mq.TLO.Me.Class.ShortName()
+    if not TANK_CLASSES[myClass] then return 0 end
+
     if not self.config:get('Taunt.Enabled') then return 0 end
+
     if not ctx.assist.Id then return 0 end
 
     -- Must have the assist target currently targeted to get valid TargetOfTarget data
@@ -37,17 +41,14 @@ function TauntDecision:score(ctx)
         return 97
     end
 
-    -- If targeting another tank, don't taunt
-    local totSpawn = mq.TLO.Spawn('id ' .. totId)
-    local totClass
-    if totSpawn() then
-        totClass = totSpawn.Class.ShortName()
-        if totClass and TANK_CLASSES[totClass] then return 0 end
-    end
+    -- If targeting another tank, don't taunt -- Me.TargetOfTarget (not
+    -- Target.TargetOfTarget) is the TLO that actually populates; it returns a
+    -- name string, so resolve through Spawn to get the class.
+    local totName = mq.TLO.Me.TargetOfTarget()
+    local totClass = totName and mq.TLO.Spawn('=' .. totName).Class.ShortName()
+    if totClass and TANK_CLASSES[totClass] then return 0 end
 
     local ability = self:findReady(false)
-    print(string.format('[SRL] Taunt: ToT=%s (%s) is not a tank -- reactive taunt %s',
-        tostring(totId), tostring(totClass), ability and (ability._resolvedName or ability.name) or 'NONE READY'))
     if not ability then return 0 end
 
     self.pending = ability
@@ -67,27 +68,26 @@ function TauntDecision:execute(ctx)
     end
 end
 
--- Reactive entries (proactiveOnly=false) fire as soon as they're ready.
--- Proactive entries (proactiveOnly=true) additionally require Me.PctAggro to
--- have dropped below the entry's own aggroThreshold (falls back to
--- Taunt.AggroThreshold, default 95). List order is priority order -- the
--- first ready+qualifying entry wins, so put your preferred top-off ability
+-- Every entry is always reactive-eligible -- fires as soon as it's ready
+-- whenever someone else already has aggro (stillHaveAggro=false), no
+-- threshold involved since aggro's already lost. Entries that also declare
+-- an aggroThreshold are ADDITIONALLY proactive-eligible -- while you still
+-- hold aggro (stillHaveAggro=true), they fire once Me.PctAggro drops below
+-- their own threshold, topping it off before it's actually lost. An entry
+-- with no aggroThreshold is reactive-only. List order is priority order --
+-- the first ready+qualifying entry wins, so put your preferred ability
 -- first and reserve a lower aggroThreshold on a later entry as backup for
 -- when the first one is on cooldown.
-function TauntDecision:findReady(proactiveOnly)
+function TauntDecision:findReady(stillHaveAggro)
     local abilities = self.config:get('Taunt.Abilities') or {}
-    local defaultThreshold = self.config:get('Taunt.AggroThreshold') or 95
     local pctAggro = mq.TLO.Me.PctAggro()
 
     for _, entry in ipairs(abilities) do
-        if (entry.proactive == true) == proactiveOnly then
-            if not proactiveOnly then
-                if self:isReady(entry) then return entry end
-            else
-                local threshold = entry.aggroThreshold or defaultThreshold
-                if (pctAggro or 100) < threshold and self:isReady(entry) then
-                    return entry
-                end
+        if not stillHaveAggro then
+            if self:isReady(entry) then return entry end
+        elseif entry.aggroThreshold then
+            if (pctAggro or 100) < entry.aggroThreshold and self:isReady(entry) then
+                return entry
             end
         end
     end

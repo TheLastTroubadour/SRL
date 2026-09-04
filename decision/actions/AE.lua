@@ -97,7 +97,11 @@ function AEDecision:score(ctx)
         end
     end
 
-    return 82
+    -- Above the lifetap-triggered nuke tier (88, Nuke.lua's selfHeal escalation)
+    -- -- hitting everyone in an AE-worthy pile matters more than a single-
+    -- target self-heal side effect, even when own HP is also low enough to
+    -- trigger that escalation.
+    return 90
 end
 
 function AEDecision:execute(ctx)
@@ -141,8 +145,16 @@ function AEDecision:execute(ctx)
             mq.cmdf('/cast %s', gem)
             mq.delay(1000, function() return mq.TLO.Me.Casting() ~= nil end)
             mq.delay(castTime, function() return not mq.TLO.Me.Casting() end)
-            local recast = (mq.TLO.Spell(spellName).RecastTime.TotalSeconds() or 0) * 1000
-            self.recastTimers[entry.name] = mq.gettime() + math.max(recast, 2000)
+            -- Only lock out re-consideration if the cast actually landed --
+            -- confirmed by the spell's own reuse timer having been consumed
+            -- (SpellReady flipped false). If it's still ready, the cast
+            -- failed/got interrupted/fizzled and the real cooldown never
+            -- started, so don't self-impose the full recast duration as an
+            -- artificial lockout on top of that.
+            if not mq.TLO.Me.SpellReady(spellName)() then
+                local recast = (mq.TLO.Spell(spellName).RecastTime.TotalSeconds() or 0) * 1000
+                self.recastTimers[entry.name] = mq.gettime() + math.max(recast, 2000)
+            end
 
         elseif entry.type == 'disc' then
             local discName = resolveSpellName(entry)

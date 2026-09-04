@@ -62,9 +62,13 @@ function CastService:emergencyInterruptNeeded(job)
 
     if self.statusService then
         for _, peer in ipairs(self.statusService:getAll()) do
-            -- Prefer the DanNet observer's HP when we have one (fresher --
-            -- driven by the peer's own plugin, not their Lua main loop).
-            local hp = (self.danNetHpService and self.danNetHpService:getHp(peer.name)) or peer.hp
+            -- peer.hp (StatusService) preferred over the DanNet observer --
+            -- confirmed live that a DanNet observer can get stuck reporting a
+            -- stale value indefinitely (no expiry of its own), whereas
+            -- StatusService self-corrects every tick and expires after 15s
+            -- of silence. DanNet only fills in if StatusService has nothing
+            -- for this peer at all (peer.hp nil -- their script isn't running).
+            local hp = peer.hp or (self.danNetHpService and self.danNetHpService:getHp(peer.name))
             if isCritical(peer.name, hp, peer.dead) then
                 return true
             end
@@ -102,7 +106,7 @@ function CastService:startWorker()
     self.scheduler:spawn(function()
 
         while true do
-            local ok, err = pcall(function()
+            local ok, err = xpcall(function()
             -- Dead -- can't cast anything, and the queue can otherwise sit
             -- around firing casts against stale/corpse data until we release
             -- and come back alive. Drop everything queued and wait it out.
@@ -275,9 +279,9 @@ function CastService:startWorker()
                 State.flags.castInFlight = false
             end
             ::workerNext::
-            end) -- end pcall
+            end, function(e) return debug.traceback(tostring(e), 2) end) -- end xpcall
             if not ok then
-                print("CastService worker error:", err)
+                print("CastService worker error: " .. tostring(err))
                 self.currentlyInFlight = nil
                 State.flags.castInFlight = false
             end
@@ -378,16 +382,30 @@ function CastService:castItem(job)
     if self.melodyService and mq.TLO.Me.Class.ShortName() == 'BRD' then
         resumeMelody = self.melodyService.active
         self.melodyService:stop()
-        mq.delay(100, function() return not mq.TLO.Me.Casting() end)
+        mq.delay(1000, function() return not mq.TLO.Me.Casting() end)
     end
 
     mq.cmdf('/useitem "%s"', job.name)
     local castTime = item.Clicky.CastTime() or 0
+
+    -- The client takes a beat to register the cast after /useitem, so a bare
+    -- "wait until not Casting()" returns instantly. Wait for the cast to start
+    -- first... (predicate MUST return a boolean -- returning the raw Casting()
+    -- spell userdata makes mq.delay throw, with the function itself as the error)
+    mq.delay(1000, function() return mq.TLO.Me.Casting.ID() ~= nil end)
+
+    -- ...then for it to run its course.
     if castTime > 0 then
         mq.delay(castTime + 500, function() return not mq.TLO.Me.Casting() end)
+    else
+        mq.delay(1000)
     end
 
     if resumeMelody then
+        -- The client is still in cast recovery the instant Casting() clears --
+        -- firing /queuemelody now gets eaten and the melody never starts. Give
+        -- it a beat to settle before singing again.
+        mq.delay(1000)
         self.melodyService:play(resumeMelody)
     end
 end

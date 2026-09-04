@@ -48,19 +48,36 @@ All commands use the unified `/srl <subcommand>` format.
 | `/srl saveweaponset <name>` | Save currently equipped weapons to named set in YAML |
 | `/srl gemswap <name> [gem ...]` | Save currently memmed gems to a named GemSwap set in YAML (no gems = capture all) |
 | `/srl backoff` | Stop combat, clear target |
+| `/srl clearxtar <on\|off\|default>` | Toggle auto chain-assist through remaining xtarget adds once the current target dies (off by default) |
 | `/srl debuffon` | Command debuff current target (uses `DebuffOnCommand` spells) |
 | `/srl debuffoff` | Clear command debuff |
+| `/srl doton` | Command-cast DoTs on current target (uses `DotsOnCommand` spells) |
+| `/srl dotoff` | Clear command dot |
+| `/srl charmon <npcId> <enchanterName>` | Direct a charm pet to attack an NPC |
+| `/srl charmoff [enchanterName]` | Stop a charm pet (all charmers if name omitted) |
 | `/srl aeon` | Enable AE spells |
 | `/srl aeoff` | Disable AE spells |
+| `/srl mez <on\|off\|default>` | Runtime override for `CrowdControl.Enabled` (in-memory, resets on restart) |
 | `/srl follow` | All bots follow you |
 | `/srl follow id=<id>` | Follow a specific spawn by ID |
 | `/srl stop` | Stop following |
 | `/srl move` | Emergency move to you |
 | `/srl navfollow` | Nav-follow you |
 | `/srl mtt` | Navigate to your current target |
+| `/srl med on\|off\|full` | Force med mode on/off, or full (wait for max mana, not just `medStart` threshold) |
 | `/srl medon` | Force all bots into med mode |
 | `/srl medoff` | Take all bots out of med mode |
 | `/srl moveon [seconds]` | Suppress med mode for N seconds (default 60) |
+| `/srl reson` | Enable the Resource decision (mana/endurance regen abilities) |
+| `/srl resoff` | Disable the Resource decision |
+| `/srl buffon` | Enable BotBuff/GroupBuff casting |
+| `/srl buffoff` | Disable BotBuff/GroupBuff casting |
+| `/srl cureson` | Enable auto-cures |
+| `/srl curesoff` | Disable auto-cures |
+| `/srl epicon` | Enable auto epic-clicking |
+| `/srl epicoff` | Disable auto epic-clicking |
+| `/srl grouphealon` | Enable the group heal spell |
+| `/srl grouphealoff` | Disable the group heal spell |
 | `/srl mount` | Mount all bots |
 | `/srl stickpoint <point>` | Set melee stick point (Behind/Front/etc.) |
 | `/srl stickdist <dist>` | Set melee stick distance |
@@ -82,6 +99,7 @@ All commands use the unified `/srl <subcommand>` format.
 | `/srl melody <name>` | Start bard melody |
 | `/srl stopmelody` | Stop bard melody |
 | `/srl buffme` | Request all bots buff the sender |
+| `/srl buffit` | Cast BotBuff on current target by name |
 | `/srl clickitem <item> [id=<id>]` | Click item on target (defaults to current target) |
 | `/srl set <name>` | Switch spell set |
 | `/srl maxmobs <n>` | Override max tanked mobs |
@@ -89,6 +107,7 @@ All commands use the unified `/srl <subcommand>` format.
 | `/srl addnoslow` | Add current target to no-slow list (skips all `group: slow` debuffs) |
 | `/srl fi <item>` | Find item in bags |
 | `/srl fmi <item>` | Find missing item |
+| `/srl findslot <slot>` | Find an item slot across bots |
 | `/srl status [threshold]` | Report level, exp%, and unspent AAs (supports include/exclude) |
 | `/srl turnin <item>` | Turn in item to targeted NPC |
 | `/srl say <phrase>` | Say phrase at staggered intervals |
@@ -97,7 +116,16 @@ All commands use the unified `/srl <subcommand>` format.
 | `/srl reload` | Reload YAML config |
 | `/srl overlay` | Toggle group status overlay (local) |
 | `/srl debug` | Toggle debug window (local) |
+| `/srl config` | Toggle YAML config editor window (local) |
+| `/srl manualmode` | Toggle full automation kill-switch (local) |
+| `/srl rebuff` | Force a rebuff cycle |
+| `/srl respawn` | Click Select on the release/respawn window if it's open |
+| `/srl benchhps start\|stop` | Log raid-frame vs. live spawn HP staleness (diagnostic) |
+| `/srl healbench start\|stop` | Log heal-pipeline hurt-to-healed latency (diagnostic) |
+| `/srl rez` | Request a rez on the targeted PC corpse |
 | `/srl automode <role>\|off` | Set puller\|tank\|assist automode, or clear it (local) |
+| `/srl broadcastscope <group\|zone\|raid\|all\|default>` | Set how far automode's own broadcasts travel (assist, med break, camp); defaults to zone |
+| `/srl backgroundassist <on\|off\|default>` | Outside automode, auto-follow the active assist target once this window loses focus (on by default) |
 | `/srl setcamp` | Set camp to current location (broadcast to raid) |
 | `/srl clearcamp` | Clear camp (broadcast to raid) |
 | `/srl count` | Show bot zone status (local) |
@@ -142,7 +170,9 @@ Three roles, all local/in-memory (reset on script restart):
 - **`tank`** — auto-broadcasts assist whenever this bot's own target is a new live hostile NPC the raid isn't already fighting, so you don't have to manually run `/srl assiston` on every pull.
 - **`assist`** — no behavior change; every bot already reacts to the broadcast assist target regardless of automode. Purely for labeling a raid's roles through one command.
 
-Independent of automode: once the current assist target dies, whichever bot broadcast it (puller hand-off, tank auto-assist, or a manual `/srl assiston`) automatically advances to the next live aggressive XTarget mob — chain-pulls and unplanned adds get cleared without a human re-issuing assist.
+**Broadcast scope** — `/srl broadcastscope <group|zone|raid|all|default>` controls how far automode's own broadcasts travel (assist calls, med break, camp). Defaults to `zone` (everyone DanNet-connected in the zone, regardless of group/raid membership); `group`/`raid` narrow it to just your EQ group or raid roster, `all` reaches every DanNet peer regardless of zone. In-memory only, resets on script restart.
+
+Independent of automode: once the current assist target dies, whichever bot broadcast it (puller hand-off, tank auto-assist, or a manual `/srl assiston`) can advance to the next live aggressive XTarget mob automatically, clearing chain-pulls/unplanned adds without a human re-issuing assist. **Off by default** — enable with `/srl clearxtar on` (or `Automode.ClearXTarget: true` in config). It re-broadcasts at whatever `broadcastscope` is currently active (zone by default), not just your own camp, so left on it can pull in bots well outside whichever camp actually triggered it.
 
 ```yaml
 Pull:
@@ -842,7 +872,7 @@ Debuff:
 >
 > **`DebuffOnCommand`** uses all the same flags (`group`, `checkBuff`, `passThrough`, `priority`) as `DebuffOnAssist`. Triggered by `/srl debuffon` and scores 115 regardless of `priority`.
 >
-> **No-slow list:** `/srl addnoslow` adds the current target to an in-memory + persistent list (`config/srl/noslow.txt`). All `group: slow` entries are skipped for mobs on this list. Persists across restarts.
+> **No-slow list:** `/srl addnoslow` adds the current target to an in-memory + persistent list (`config/srl/config/general/noslow.txt`). All `group: slow` entries are skipped for mobs on this list. Persists across restarts.
 >
 > **Spell sets:** Like nukes, debuff sets can be named (`DebuffOnAssist.Fire`, etc.) and switched with `/srl set`.
 
@@ -985,7 +1015,7 @@ General:
 
 Shared settings that apply to **all** bots live in:
 ```
-srl/config/settings.yaml
+srl/config/general/settings.yaml
 ```
 
 Character YAML is deep-merged on top, so any character-level value overrides the global default.

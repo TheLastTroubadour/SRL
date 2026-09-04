@@ -49,8 +49,12 @@ function CureService:update()
                 local underscored = name:gsub(' ', '_')
                 table.insert(buffNames, underscored)
 
+                -- CounterType() returns the literal string "None" for an
+                -- uncountered debuff, not nil/empty -- without this check that
+                -- passes straight through as a meaningless "None" cure type
+                -- instead of falling back to the debuff's own name.
                 local ct = buff.CounterType()
-                local cureType = (ct and ct ~= '' and ct) or underscored
+                local cureType = (ct and ct ~= '' and ct ~= 'None' and ct) or underscored
                 if not seenTypes[cureType] then
                     seenTypes[cureType] = true
                     table.insert(types, cureType)

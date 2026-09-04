@@ -49,7 +49,7 @@ local function charFilePath()
 end
 
 local function settingsFilePath()
-    return mq.configDir .. '\\srl\\config\\settings.yaml'
+    return mq.configDir .. '\\srl\\config\\general\\settings.yaml'
 end
 
 local function readFile(path)

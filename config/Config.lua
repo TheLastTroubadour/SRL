@@ -144,7 +144,7 @@ end
 
 function ConfigService:loadGlobalSettings()
 
-    local path = mq.configDir .. "\\srl\\config\\settings.yaml"
+    local path = mq.configDir .. "\\srl\\config\\general\\settings.yaml"
 
     local file = io.open(path, "r")
 
