@@ -134,6 +134,8 @@ local SECTIONS = {
             { key = 'gem',             label = 'Gem',              ftype = 'number' },
             { key = 'buffName',        label = 'Buff Name',        ftype = 'spell_name' },
             { key = 'alwaysCheck',     label = 'Always Check',     ftype = 'bool' },
+            { key = 'raidOnly',        label = 'Raid Only',        ftype = 'bool' },
+            { key = 'reagent',         label = 'Reagent',          ftype = 'string' },
             { key = 'charactersToBuff', label = 'Characters to Buff', ftype = 'string_list' },
         },
         default  = { spell = '', type = 'spell' },

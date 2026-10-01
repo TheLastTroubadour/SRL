@@ -6,6 +6,16 @@ local State = require 'core.State'
 local SpellUtil = require 'util.SpellUtil'
 local MAX_NEXT_CHECK_MS = 30 * 60 * 1000  -- 30 minutes
 
+-- Reagent-gated buffs (e.g. Shaman Avatar needs an Emerald): how often to
+-- re-warn while the item is exhausted, and the count below which we nag to
+-- restock. Mirrors BerzerkerAxe.lua's handling.
+local REAGENT_WARN_INTERVAL = 5 * 60 * 1000  -- 5 minutes
+local REAGENT_LOW_THRESHOLD = 10
+
+local function reagentCount(itemName)
+    return tonumber(mq.TLO.FindItemCount('=' .. itemName)()) or 0
+end
+
 local BuffService = {}
 BuffService.__index = BuffService
 
@@ -29,6 +39,7 @@ function BuffService:new(bus, scheduler, combatService, castService, config)
     self.cooldowns = {}     -- suppression timer
     self.nextCheck = {}     -- key → timestamp when next poll allowed
     self.knownBuffs = {}    -- [targetName][buffName] = expiryMs
+    self.reagentWarn = {}   -- [reagentName] = timestamp of last out/low warning
 
     return self
 end
@@ -162,6 +173,33 @@ function BuffService:processCategory(category, inCombat)
             end
         end
 
+        -- Reagent-costly buffs (e.g. requires a reagent) can be scoped to actual
+        -- raid encounters only, so they don't burn through reagents on group trash.
+        if buff.raidOnly and (mq.TLO.Raid.Members() or 0) == 0 then
+            goto continue
+        end
+
+        -- Reagent gate: don't try to cast (and periodically warn) when the
+        -- required reagent is exhausted or running low.
+        if buff.reagent then
+            local have = reagentCount(buff.reagent)
+            local now = mq.gettime()
+            local lastWarn = self.reagentWarn[buff.reagent]
+            local dueToWarn = not lastWarn or (now - lastWarn) >= REAGENT_WARN_INTERVAL
+            if have <= 0 then
+                if dueToWarn then
+                    print(string.format('[SRL] WARNING: %s is out of %s -- skipping %s',
+                        mq.TLO.Me.Name(), buff.reagent, buff.name))
+                    self.reagentWarn[buff.reagent] = now
+                end
+                goto continue
+            elseif have < REAGENT_LOW_THRESHOLD and dueToWarn then
+                print(string.format('[SRL] WARNING: %s has only %d %s left -- restock soon!',
+                    mq.TLO.Me.Name(), have, buff.reagent))
+                self.reagentWarn[buff.reagent] = now
+            end
+        end
+
         buff.category = category
 
         local p = self:pollIfDue(buff.targetName, buff.buffName or buff.name, buff.range)
@@ -254,6 +292,8 @@ function BuffService:getBuffInformationForKey(key)
                     job.buffName = buffName
                     job.checkFor = v.checkFor
                     job.range = v.range
+                    job.raidOnly = v.raidOnly or false
+                    job.reagent = v.reagent
                     table.insert(jobList, job)
                 end
             else
@@ -263,6 +303,7 @@ function BuffService:getBuffInformationForKey(key)
                 job.buffName = buffName
                 job.checkFor = v.checkFor
                 job.range = v.range
+                job.raidOnly = v.raidOnly or false
                 table.insert(jobList, job)
             end
         end

@@ -205,6 +205,13 @@ function CCDecision:execute(ctx)
     self.waitingForResult = true
     local gem = mq.TLO.Me.Gem(spellName)() or self.pendingSpell.gem
     if not gem then return end
+
+    local targetName = mq.TLO.Spawn('id ' .. self.pendingTarget).CleanName() or '?'
+    if #self.pendingAeTargets > 1 then
+        targetName = string.format('%s + %d others', targetName, #self.pendingAeTargets - 1)
+    end
+    mq.cmdf('/dga all /echo [SRL] %s mezzing %s with %s', mq.TLO.Me.Name(), targetName, spellName)
+
     mq.cmdf('/cast %s', gem)
     mq.delay(1000, function() return mq.TLO.Me.Casting() ~= nil end)
     mq.delay(castTime, function() return not mq.TLO.Me.Casting() end)
@@ -257,9 +264,19 @@ function CCDecision:findAeMezOpportunity(ctx)
         local minTargets = aeSpell.aeMinTargets or 2
 
         for _, centerId in ipairs(unmezzed) do
-            local centerLevel = mq.TLO.Spawn('id ' .. centerId).Level() or 0
+            local centerSpawn = mq.TLO.Spawn('id ' .. centerId)
+            if not centerSpawn() then goto nextCenter end
+            local centerLevel = centerSpawn.Level() or 0
             if aeSpell.maxLevel and centerLevel > aeSpell.maxLevel then goto nextCenter end
             if aeSpell.minLevel and centerLevel < aeSpell.minLevel then goto nextCenter end
+
+            -- Caster must actually be able to land the AE on this center --
+            -- aeRange above is just the blast radius from the center, not the
+            -- cast range to reach it.
+            local castRange = tonumber(mq.TLO.Spell(aeResolved).Range()) or 0
+            if castRange > 0 and (centerSpawn.Distance() or 0) > castRange then goto nextCenter end
+            if not centerSpawn.LineOfSight() then goto nextCenter end
+
             local hits = self:getTargetsInRange(centerId, unmezzed, aeRange)
             -- filter hits by minLevel/maxLevel too
             if aeSpell.maxLevel or aeSpell.minLevel then
@@ -358,9 +375,10 @@ function CCDecision:findExpiring(now)
     return nil
 end
 
--- Single-target spells only (ae = false or nil). Checks maxLevel against target if provided.
+-- Single-target spells only (ae = false or nil). Checks maxLevel, range, and LoS against target if provided.
 function CCDecision:findReadySingleSpell(targetId)
-    local targetLevel = targetId and mq.TLO.Spawn('id ' .. targetId).Level() or nil
+    local spawn = targetId and mq.TLO.Spawn('id ' .. targetId) or nil
+    local targetLevel = spawn and spawn() and spawn.Level() or nil
     for _, spell in ipairs(self.spells) do
         if not spell.ae then
             local resolved = SpellUtil.resolveRank(spell.spell, 'spell')
@@ -368,10 +386,16 @@ function CCDecision:findReadySingleSpell(targetId)
                 and (not spell.maxLevel or not targetLevel or targetLevel <= spell.maxLevel)
                 and (not spell.minLevel or not targetLevel or targetLevel >= spell.minLevel)
             then
+                if spawn and spawn() then
+                    local spellRange = tonumber(mq.TLO.Spell(resolved).Range()) or 0
+                    if spellRange > 0 and (spawn.Distance() or 0) > spellRange then goto continue end
+                    if not spawn.LineOfSight() then goto continue end
+                end
                 spell._resolved = resolved
                 return spell
             end
         end
+        ::continue::
     end
     return nil
 end

@@ -30,6 +30,7 @@ function StatusService:update(data)
         hp        = data.hp,
         mana      = data.mana,
         endurance = data.endurance,
+        aggro     = data.aggro,
         target    = data.target,
         casting   = data.casting,
         dead      = data.dead,
@@ -53,6 +54,17 @@ function StatusService:getHp(name)
     if not entry or entry.hp == nil then return nil end
     if (mq.gettime() - entry.updatedAt) >= EXPIRY_MS then return nil end
     return entry.hp
+end
+
+-- Self-reported aggro % on this peer's own current target -- the only cheap
+-- way to know who a mob is actually attacking, since MQ2SpawnType has no
+-- field for a mob's current target at all. Used to tell "configured tank"
+-- apart from "tank currently getting hit" (see Context:isPeerTanking).
+function StatusService:getAggro(name)
+    local entry = self.peers[name]
+    if not entry or entry.aggro == nil then return nil end
+    if (mq.gettime() - entry.updatedAt) >= EXPIRY_MS then return nil end
+    return entry.aggro
 end
 
 -- Self-reported dead flag (Me.Dead() is always accurate for whoever's

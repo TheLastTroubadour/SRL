@@ -192,16 +192,30 @@ function CastService:startWorker()
                     end)
                 end
 
-                -- Find first job past its notBefore time
+                -- Find first job past its notBefore time, preferring one that's
+                -- castable right now (spell already memmed + off recast). Without
+                -- this, a not-ready spell at the front of the queue (still on
+                -- recast, or needs a gem-swap) blocks srlCast for several seconds
+                -- via mq.delay -- which freezes the whole script -- while every
+                -- other queued job just sits there, even ones ready to fire
+                -- immediately. Falls back to the plain first-past-notBefore job
+                -- (old behavior) if nothing in the queue is immediately castable,
+                -- so a genuinely-only-option job still goes through its normal
+                -- (possibly waiting) cast path.
                 local jobIdx = nil
+                local fallbackIdx = nil
                 local nowMs = mq.gettime()
                 for idx = 1, #self.queue do
                     local j = self.queue[idx]
                     if not j.notBefore or nowMs >= j.notBefore then
-                        jobIdx = idx
-                        break
+                        if not fallbackIdx then fallbackIdx = idx end
+                        if self:isJobImmediatelyCastable(j) then
+                            jobIdx = idx
+                            break
+                        end
                     end
                 end
+                jobIdx = jobIdx or fallbackIdx
 
                 if not jobIdx then
                     mq.delay(50)
@@ -333,6 +347,24 @@ end
 
 function CastService:isQueued(job)
     return self.queuedKeys[job.key] == true
+end
+
+-- True if this job can fire immediately with no blocking wait -- already
+-- memmed (for spell types) and off recast/reuse. Used only to pick which
+-- queued job to try next, so one not-ready spell/disc doesn't stall every
+-- other job behind it; whichever job gets picked still goes through the
+-- normal (possibly waiting) cast path in srlCast/castDisc/etc.
+function CastService:isJobImmediatelyCastable(job)
+    if job.type == 'ability' or job.type == 'item' then return true end
+    if job.type == 'aa' then
+        return mq.TLO.Me.AltAbilityReady(job.name)() == true
+    end
+    if job.type == 'disc' then
+        return mq.TLO.Me.CombatAbilityReady(job.name)() == true
+    end
+    -- spell / heal / buff / nuke -- must already be memmed somewhere (not
+    -- just knowable/scribed) and off its own recast timer.
+    return mq.TLO.Me.Gem(job.name)() ~= nil and mq.TLO.Me.SpellReady(job.name)() == true
 end
 
 function CastService:lockGem(gemNum)
@@ -541,11 +573,13 @@ function CastService:srlCast(job)
             return "BAD_TARGET_ID"
         end
 
-        -- Self-only spells land on the caster regardless of current target in
-        -- EQ -- no need to retarget self, which would otherwise needlessly
-        -- knock a mid-combat character off its actual assist/combat target.
-        local isSelfCast = job.targetId == mq.TLO.Me.ID()
-        if not isSelfCast and mq.TLO.Target.ID() ~= job.targetId then
+        -- Only a spell whose own TargetType is "Self" is guaranteed to land on the
+        -- caster regardless of current target -- a "buff on myself" job whose spell
+        -- is actually Single-target still needs the caster targeted, or it lands on
+        -- whatever's currently selected (e.g. the assist mob) instead of self.
+        local isTrueSelfSpell = job.targetId == mq.TLO.Me.ID()
+                and mq.TLO.Spell(job.name).TargetType() == 'Self'
+        if not isTrueSelfSpell and mq.TLO.Target.ID() ~= job.targetId then
             Target:getTargetById(job.targetId)
         end
         mq.cmd("/stick off")

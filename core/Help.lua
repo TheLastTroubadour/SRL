@@ -56,6 +56,7 @@ HELP['commands'] = {
     '[SRL]   /srl reson / resoff    - enable/disable the Resource decision (mana/end regen)',
     '[SRL]   /srl buffon / buffoff  - enable/disable BotBuff/GroupBuff casting',
     '[SRL]   /srl cureson / curesoff - enable/disable auto-cures',
+    '[SRL]   /srl looton / lootoff  - enable/disable auto-looting the Advanced Loot personal window',
     '[SRL]   /srl epicon / epicoff  - enable/disable auto epic-clicking',
     '[SRL]   /srl grouphealon / grouphealoff - enable/disable the group heal spell',
     '[SRL]   /srl aeon / aeoff      - enable/disable AE spells (disabled by default)',
@@ -87,6 +88,7 @@ HELP['commands'] = {
     '[SRL]   /srl hail               - target the mob and /keypress HAIL, staggered per bot',
     '[SRL]   /srl addnomez          - add current target to no-mez list',
     '[SRL]   /srl addnoslow         - add current target to no-slow list (skips group: slow debuffs)',
+    '[SRL]   /srl healcall [name]   - clerics spam Heals.CallHeal on name (or current target) for 15s',
     '[SRL] Info:',
     '[SRL]   /srl status [n]        - report level, exp%, and unspent AAs (optional min AA threshold)',
     '[SRL]   /srl count             - show bots in/out of zone (local)',
@@ -116,7 +118,7 @@ HELP['commands'] = {
 HELP['filters'] = {
     '[SRL] ===== Include / Exclude Filters =====',
     '[SRL] Most commands accept include= and exclude= filters.',
-    '[SRL] Tokens: character name, class (CLR/BRD/SHM...), armor (Silk/Leather/Chain/Plate), Group',
+    '[SRL] Tokens: character name, class (CLR/BRD/SHM...), armor (Silk/Leather/Chain/Plate), Group, Raid, Me',
     '[SRL]',
     '[SRL]   /srl quickburn include=Plate      - only plate wearers',
     '[SRL]   /srl follow exclude=Healer        - everyone except Healer',
@@ -136,12 +138,16 @@ HELP['buffs'] = {
     '[SRL]   - spell: My Buff Rk. III',
     '[SRL]     gem: 2',
     '[SRL]     alwaysCheck: true       # BotBuff only: also cast during combat',
+    '[SRL]     raidOnly: true          # only cast while in a raid',
+    '[SRL]     reagent: Emerald        # skip + warn when out of this item',
     '[SRL]     charactersToBuff:       # optional: limit to specific characters',
     '[SRL]       - TankName',
     '[SRL]',
     '[SRL] Notes:',
     '[SRL]   - alwaysCheck: true makes a BotBuff entry fire in and out of combat.',
     '[SRL]   - charactersToBuff casts one at a time and waits for it to land.',
+    '[SRL]   - reagent: skips the buff while inventory count is 0 (warns every 5 min,',
+    '[SRL]     also warns below 10 remaining). e.g. Shaman Avatar -> reagent: Emerald',
 }
 
 HELP['heals'] = {

@@ -61,6 +61,25 @@ function Context:getPeerHp(name)
     return self.danNetHpService and self.danNetHpService:getHp(name)
 end
 
+-- True if this tank currently appears to be the one actively getting
+-- attacked (high self-reported aggro on their own target), not just
+-- "configured as a tank in Heals.Tanks". MQ2SpawnType has no field for who a
+-- mob is currently targeting, so each tank has to self-report via the
+-- char_status aggro field -- self reads live (always accurate, no broadcast
+-- round-trip needed).
+local TANKING_AGGRO_THRESHOLD = 80
+
+function Context:isPeerTanking(name)
+    if name == mq.TLO.Me.Name() then
+        return (mq.TLO.Me.PctAggro() or 0) >= TANKING_AGGRO_THRESHOLD
+    end
+    if self.statusService then
+        local aggro = self.statusService:getAggro(name)
+        if aggro then return aggro >= TANKING_AGGRO_THRESHOLD end
+    end
+    return false
+end
+
 function Context:setStickPoint(point)
     self.stickPoint = point
 end
@@ -249,12 +268,14 @@ function Context:build(state)
             -- Always include self as a heal target
             local myName = mq.TLO.Me.Name()
             seen[myName] = true
+            local myRole = self:getHealerRole(myName)
             table.insert(ctx.self.heal.group.memberStatus, {
                 id      = mq.TLO.Me.ID(),
                 name    = myName,
                 hp      = mq.TLO.Me.PctHPs(),
-                role    = self:getHealerRole(myName),
+                role    = myRole,
                 inGroup = true,
+                tanking = myRole == 'tank' and self:isPeerTanking(myName) or false,
             })
 
             for i = 1, ctx.self.heal.group.members do
@@ -271,6 +292,7 @@ function Context:build(state)
                             hp      = m.PctHPs(),
                             role    = role,
                             inGroup = true,
+                            tanking = role == 'tank' and self:isPeerTanking(name) or false,
                         })
                     end
                 end
@@ -307,6 +329,7 @@ function Context:build(state)
                                 hp      = hp,
                                 role    = role,
                                 inGroup = false,
+                                tanking = role == 'tank' and self:isPeerTanking(name) or false,
                             })
                         end
                     end
@@ -339,12 +362,14 @@ function Context:build(state)
                                 local canonicalName = spawn.CleanName() or name
                                 if not seen[canonicalName] then
                                     seen[canonicalName] = true
+                                    local role = self:getHealerRole(canonicalName)
                                     table.insert(ctx.self.heal.group.memberStatus, {
                                         id      = spawn.ID(),
                                         name    = canonicalName,
                                         hp      = hp,
-                                        role    = self:getHealerRole(canonicalName),
+                                        role    = role,
                                         inGroup = false,
+                                        tanking = role == 'tank' and self:isPeerTanking(canonicalName) or false,
                                     })
                                 end
                             end
@@ -368,6 +393,7 @@ function Context:build(state)
                             hp      = xt.PctHPs(),
                             role    = role,
                             inGroup = false,
+                            tanking = role == 'tank' and self:isPeerTanking(name) or false,
                         })
                     end
                 end

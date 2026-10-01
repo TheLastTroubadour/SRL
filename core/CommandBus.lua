@@ -34,11 +34,18 @@ local function buildExtra(args, skip)
     return #parts > 0 and (' ' .. table.concat(parts, ' ')) or ''
 end
 
--- Returns true if token matches the character by name, class, armor type, or group.
+-- Returns true if token matches the character by name, class, armor type,
+-- group, raid, or "me" (sender only).
 local function matchesToken(token, myClass, myName, sender)
     token = token:match('^%s*(.-)%s*$')  -- trim whitespace
     if token:lower() == 'group' then
         return sender ~= nil and mq.TLO.Group.Member(sender)() ~= nil
+    end
+    if token:lower() == 'raid' then
+        return sender ~= nil and mq.TLO.Raid.Member(sender)() ~= nil
+    end
+    if token:lower() == 'me' then
+        return sender ~= nil and myName:lower() == sender:lower()
     end
     if ARMOR_TYPES[token:lower()] then
         return ARMOR_TYPES[token:lower()][myClass] == true
@@ -51,7 +58,8 @@ end
 -- exclude=X  → skip if character matches X
 -- include=X  → only process if character matches X
 -- neither    → process everyone
--- Tokens: character name, class short name, armor type (Silk/Leather/Chain/Plate), Group
+-- Tokens: character name, class short name, armor type (Silk/Leather/Chain/Plate),
+-- Group (sender's EQ group), Raid (sender's raid), Me (sender only)
 function CommandBus:matchesFilter(include, exclude, sender)
     local myClass = mq.TLO.Me.Class.ShortName()
     local myName  = mq.TLO.Me.Name()
@@ -282,6 +290,14 @@ function CommandBus:init(config)
             mq.cmdf('/dgze /srlevent CuresOff sender=%s%s', me, extra)
             mq.cmdf('/srlevent CuresOff sender=%s%s', me, extra)
 
+        elseif subcmd == 'lootoff' then
+            mq.cmdf('/dgze /srlevent LootOff sender=%s%s', me, extra)
+            mq.cmdf('/srlevent LootOff sender=%s%s', me, extra)
+
+        elseif subcmd == 'looton' then
+            mq.cmdf('/dgze /srlevent LootOn sender=%s%s', me, extra)
+            mq.cmdf('/srlevent LootOn sender=%s%s', me, extra)
+
         elseif subcmd == 'epicon' then
             mq.cmdf('/dgze /srlevent EpicOn sender=%s%s', me, extra)
             mq.cmdf('/srlevent EpicOn sender=%s%s', me, extra)
@@ -335,6 +351,18 @@ function CommandBus:init(config)
             local xtra = buildExtra(args, { sender=true, name=true })
             mq.cmdf('/dgae /srlevent BuffIt name=%s sender=%s%s', (target:gsub(' ', '_')), me, xtra)
             mq.cmdf('/srlevent BuffIt name=%s sender=%s%s', (target:gsub(' ', '_')), me, xtra)
+
+        -- Emergency burst heal: clerics dump their Heals.CallHeal spell(s) on
+        -- the given/targeted character for a short window, ignoring normal
+        -- tier/threshold logic entirely. Any target, not just tanks.
+        elseif subcmd == 'healcall' then
+            local target = args[1] and args[1]:gsub('_', ' ') or mq.TLO.Target.CleanName()
+            if not target or target == '' then
+                print('[SRL] healcall: no target specified and none selected')
+                return
+            end
+            mq.cmdf('/dgae /srlevent HealCall name=%s sender=%s', (target:gsub(' ', '_')), me)
+            mq.cmdf('/srlevent HealCall name=%s sender=%s', (target:gsub(' ', '_')), me)
 
         -- Spell set
         elseif subcmd == 'set' then

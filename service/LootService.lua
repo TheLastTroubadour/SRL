@@ -1,4 +1,5 @@
 local mq = require 'mq'
+local State = require 'core.State'
 
 local LootService = {}
 LootService.__index = LootService
@@ -12,6 +13,8 @@ function LootService:new()
 end
 
 function LootService:update()
+    if State.flags.lootDisabled then return end
+
     local now = mq.gettime()
     if now - self.lastCheck < 1000 then return end
     self.lastCheck = now

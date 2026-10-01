@@ -74,6 +74,8 @@ All commands use the unified `/srl <subcommand>` format.
 | `/srl buffoff` | Disable BotBuff/GroupBuff casting |
 | `/srl cureson` | Enable auto-cures |
 | `/srl curesoff` | Disable auto-cures |
+| `/srl looton` | Enable auto-looting the Advanced Loot personal window |
+| `/srl lootoff` | Disable auto-looting the Advanced Loot personal window |
 | `/srl epicon` | Enable auto epic-clicking |
 | `/srl epicoff` | Disable auto epic-clicking |
 | `/srl grouphealon` | Enable the group heal spell |
@@ -304,7 +306,7 @@ Local command. Displays all DanNet peers grouped by zone status with distance fo
 
 Most commands support `include=` and `exclude=` filters to target specific bots.
 
-**Tokens:** character name, class short name (`CLR`, `BRD`, `SHM`...), armor type (`Silk`, `Leather`, `Chain`, `Plate`), or `Group`. Multiple tokens are comma-separated. `exclude` always takes priority over `include`.
+**Tokens:** character name, class short name (`CLR`, `BRD`, `SHM`...), armor type (`Silk`, `Leather`, `Chain`, `Plate`), `Group` (sender's EQ group), `Raid` (sender's raid), or `Me` (sender only). Multiple tokens are comma-separated. `exclude` always takes priority over `include`.
 
 ```
 /srl quickburn include=Plate         # only plate wearers
@@ -407,6 +409,8 @@ A default file is generated on first run. Key sections:
 | `Buffs.SelfBuff` | Buffs to keep on yourself (polled via actor bus; `alwaysCheck: true` fires in combat too) |
 | `Buffs.BotBuff` | Buffs to cast on other characters, out of combat only (`alwaysCheck: true` fires in combat) |
 | `Buffs.CombatBuff` | Buffs to cast only during combat |
+| `Buffs.*` `raidOnly: true` | Entry-level flag (any Buffs category) — only cast while actually in a raid (`Raid.Members() > 0`); for reagent-costly buffs you don't want burned on group content |
+| `Buffs.*` `reagent: <item>` | Entry-level flag (SelfBuff/BotBuff/CombatBuff) — skip the buff while that item's inventory count is 0, warning every 5 min; also warns once it drops below 10 remaining. e.g. Shaman `Avatar` → `reagent: Emerald` |
 | `Buffs.InstantBuff` | Instant AAs/items fired directly each tick — no polling; `combat`/`outOfCombat` flags control when |
 | `Abilities` | Combat abilities/discs/AAs/items to use automatically |
 | `Taunt` | Taunt abilities for tank classes |
@@ -420,6 +424,7 @@ A default file is generated on first run. Key sections:
 | `Jolts.LockoutThreshold` | Aggro % to stop nuking entirely (default 100) |
 | `Heals.GroupThreshold` | Average group HP% to trigger a group heal |
 | `Heals.GroupSpell` | Group heal spell and gem |
+| `Heals.CallHeal` | Spell(s) clerics spam via `/srl healcall`, tried in order |
 | `Cleric.EpicPct` | Tank HP% to click the cleric epic (default 35) |
 | `Cleric.EpicName` | Name of the cleric epic item |
 | `Cleric.DivineArbitrationPct` | Tank HP% to use Divine Arbitration (default 35) |
@@ -476,6 +481,13 @@ Buffs:
       gem: 1
       charactersToBuff:
         - MyTank1
+    - spell: Avatar                # Shaman example
+      gem: 5
+      raidOnly: true              # don't burn reagents on group trash
+      reagent: Emerald            # skip + warn when out of Emeralds
+      charactersToBuff:
+        - MyMelee1
+        - MyMelee2
 
   InstantBuff:                   # instant AAs/items fired directly each tick — no actor bus polling
     - spell: Selo's Sonata
@@ -564,6 +576,21 @@ Heals:
 > **Promised heals** fire their heal when the buff expires, so the bot waits for it to fall off naturally. After it drops, the bot waits `buffer` seconds (default 3) to let the heal land before casting the next one.
 >
 > Both work in and out of combat. Target priority mirrors the main heal system: tanks first, then important bots, then normal group/raid members. Lowest HP within each tier wins.
+
+---
+
+### Heals — Call Heal
+
+```yaml
+Heals:
+  CallHeal:
+    - spell: My Big Heal Rk. III   # tried in order until one's ready
+      gem: 1
+    - spell: My Fast Heal
+      gem: 6
+```
+
+> `/srl healcall [name]` (or current target if omitted) — **clerics only**. Every cleric who gets the broadcast spams the first ready/in-range spell in `Heals.CallHeal` at that target for 15 seconds, once per recast, ignoring HP/threshold entirely — that's the point, it's an "everyone dump heals here now" button, not a smarter version of the normal heal logic. Works on any target, not just configured tanks. Outranks the normal tank/important/normal tier cascade, but defers to group heal if that's also eligible this tick.
 
 ---
 

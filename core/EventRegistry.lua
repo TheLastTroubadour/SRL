@@ -44,10 +44,14 @@ function EventRegistry:init(services)
 
     -- Higher-rank buff already present: suppress recasting based on the blocking buff's duration
     mq.event('SRL_SpellBlocked', 'Your #1# spell did not take hold on #2#.#*#', function(line, spellName, targetName)
-        if buffService and spellName and targetName then
-            local blockingBuff = line:match('%(Blocked by (.-)%.%)')
-            buffService:onSpellBlocked(spellName, targetName, blockingBuff)
+        if not buffService or not spellName or spellName == '' then return end
+        -- #2# is unreliable in MQNext (see SRL_TellHandler above); parse line as fallback
+        if not targetName or targetName == '' then
+            targetName = line:match('did not take hold on (.-)%.')
         end
+        if not targetName or targetName == '' then return end
+        local blockingBuff = line:match('%(Blocked by (.-)%.%)')
+        buffService:onSpellBlocked(spellName, targetName, blockingBuff)
     end)
 
     -- Group / raid invites

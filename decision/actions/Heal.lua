@@ -26,6 +26,7 @@ function HealDecision:new(config)
     self.healCooldown = {}
     self.healCooldownThreshold = {}
     self.hpHistory = {}
+    self.healCall = nil
 
     return self
 end
@@ -38,8 +39,71 @@ function HealDecision:setCastService(cs)
     self.castService = cs
 end
 
-function HealDecision:suppressGroupHeal(ms)
-    self.groupHealLock = mq.gettime() + ms
+-- Local settle window after this healer casts a group heal: just long enough
+-- for the heal to land and group HP% to refresh, so score() doesn't re-queue a
+-- second group heal off stale numbers. NOT cross-healer suppression -- every
+-- healer decides independently; if the group still needs it, it fires again.
+local GROUP_HEAL_SETTLE_MS = 1500
+
+-- /srl healcall <name> (or current target if omitted): raid-leader-invoked
+-- emergency burst heal, clerics only (gated here, not in the command handler,
+-- since the broadcast reaches every healer role). For this window, spam
+-- Heals.CallHeal at the target every time it's off recast -- deliberately
+-- ignores HP/threshold entirely, that's the point of "spam".
+local HEAL_CALL_DURATION_MS = 15000
+
+function HealDecision:activateHealCall(targetName)
+    if mq.TLO.Me.Class.ShortName() ~= 'CLR' then return end
+
+    local spawn = mq.TLO.Spawn('pc =' .. targetName)
+    if not spawn() then
+        print(string.format('[SRL] heal-call: %s not found in zone', targetName))
+        return
+    end
+
+    self.healCall = {
+        targetName = targetName,
+        targetId   = spawn.ID(),
+        expiresAt  = mq.gettime() + HEAL_CALL_DURATION_MS,
+    }
+    print(string.format('[SRL] %s: heal-call on %s (%ds)',
+        mq.TLO.Me.Name(), targetName, HEAL_CALL_DURATION_MS / 1000))
+end
+
+-- Returns { target = <spawn>, entry = <CallHeal config entry>, rspell = <resolved name> }
+-- for the first ready/in-range spell in Heals.CallHeal, or nil if the call has
+-- expired, the target's gone/dead, nothing's configured, or nothing's ready.
+function HealDecision:checkHealCall()
+    local call = self.healCall
+    if not call then return nil end
+
+    if mq.gettime() >= call.expiresAt then
+        self.healCall = nil
+        return nil
+    end
+
+    local spawn = mq.TLO.Spawn('id ' .. call.targetId)
+    if not spawn() or spawn.Dead() then
+        self.healCall = nil
+        return nil
+    end
+
+    local callSpells = self.config:get('Heals.CallHeal')
+    if not callSpells or #callSpells == 0 then return nil end
+
+    local dist = tonumber(spawn.Distance()) or 0
+    for _, entry in ipairs(callSpells) do
+        if not entry._rspell then
+            entry._rspell = SpellUtil.resolveRank(entry.spell, entry.type or 'spell')
+        end
+        local rspell = entry._rspell or entry.spell
+        local spellRange = tonumber(mq.TLO.Spell(rspell).Range()) or 200
+        if dist <= spellRange and mq.TLO.Me.SpellReady(rspell)() then
+            return { target = spawn, entry = entry, rspell = rspell }
+        end
+    end
+
+    return nil
 end
 
 local HP_HISTORY_WINDOW_MS  = 6000  -- how far back we keep samples
@@ -96,6 +160,23 @@ function HealDecision:score(ctx)
     if self:checkGroupHeal(targets) then
         self.groupHealPending = true
         return 110
+    end
+
+    -- Heal-call override: outranks the tier cascade (105) since it's an
+    -- explicit emergency call, but defers to group heal (110) above and
+    -- Cleric.lua's true life-or-death equalize (112) / CrowdControl's mez
+    -- (116-120).
+    local call = self:checkHealCall()
+    if call then
+        self.job = Job:new(
+            call.target.ID(),
+            call.target.CleanName(),
+            call.rspell,
+            "heal",
+            500,
+            call.entry.gem
+        )
+        return 109
     end
 
     -- Strict tier cascade: tank first, then important, then normal. Only fall
@@ -227,26 +308,45 @@ function HealDecision:score(ctx)
         end
     end
 
-    -- Top-off: heal anyone below threshold when nothing urgent is needed (out of combat only)
+    -- Top-off: heal anyone below threshold when nothing more urgent is needed --
+    -- fills every idle tick, in or out of combat, so the cleric is always
+    -- casting something instead of sitting idle between real heals.
     local topOff = self.config:get('Heals.TopOff')
-    if topOff and topOff.spell and ctx.numberOfAggresiveInXTar == 0 then
+    if topOff and topOff.spell then
         if not topOff._rspell then
             topOff._rspell = SpellUtil.resolveRank(topOff.spell, 'spell')
         end
         local rspell = topOff._rspell or topOff.spell
         local threshold = topOff.threshold or 99
         if mq.TLO.Me.SpellReady(rspell)() then
-            for _, t in ipairs(targets) do
-                -- t.dead is never actually set on any memberStatus entry --
-                -- this was always a no-op. t.hp > 0 is the real dead check.
-                if t.hp and t.hp > 0 and t.hp < threshold then
-                    local healSpawn = mq.TLO.Spawn('id ' .. tostring(t.id))
-                    local spellRange = tonumber(mq.TLO.Spell(rspell).Range()) or 200
-                    if healSpawn() and not healSpawn.Dead() and (tonumber(healSpawn.Distance()) or 0) <= spellRange then
-                        self.job = Job:new(t.id, t.name, rspell, 'heal', 450, topOff.gem)
-                        return 50
+            -- Three-tier fallback over the same short list rather than a
+            -- sort, since this only runs when nothing more urgent needs the
+            -- cleric's attention anyway: the tank actually getting attacked
+            -- right now, then any configured tank (t.tanking may be stale/
+            -- unknown), then anyone else.
+            local function tryTargets(filterFn)
+                for _, t in ipairs(targets) do
+                    if filterFn and not filterFn(t) then goto continue end
+                    -- t.dead is never actually set on any memberStatus entry --
+                    -- this was always a no-op. t.hp > 0 is the real dead check.
+                    if t.hp and t.hp > 0 and t.hp < threshold then
+                        local healSpawn = mq.TLO.Spawn('id ' .. tostring(t.id))
+                        local spellRange = tonumber(mq.TLO.Spell(rspell).Range()) or 200
+                        if healSpawn() and not healSpawn.Dead() and (tonumber(healSpawn.Distance()) or 0) <= spellRange then
+                            self.job = Job:new(t.id, t.name, rspell, 'heal', 450, topOff.gem)
+                            return true
+                        end
                     end
+                    ::continue::
                 end
+                return false
+            end
+
+            local function isTankBeingAttacked(t) return t.role == 'tank' and t.tanking end
+            local function isAnyTank(t) return t.role == 'tank' end
+
+            if tryTargets(isTankBeingAttacked) or tryTargets(isAnyTank) or tryTargets(nil) then
+                return 50
             end
         end
     end
@@ -267,14 +367,11 @@ function HealDecision:execute(ctx)
     end
 
     if self.groupHealPending then
-        local suppressMs = 8000
-        self.groupHealLock = mq.gettime() + suppressMs
-        if self.bus then
-            self.bus.actor:broadcast('group_heal_cast', {
-                casterName = mq.TLO.Me.Name(),
-                suppressMs = tostring(suppressMs),
-            })
-        end
+        -- Local settle only -- do not touch other healers' state. Other clerics
+        -- are typically in other groups anyway and should be free to group heal
+        -- their own group whenever it needs it.
+        local castMs = (mq.TLO.Spell(self.job.name).CastTime.TotalSeconds() or 0) * 1000
+        self.groupHealLock = mq.gettime() + castMs + GROUP_HEAL_SETTLE_MS
     end
 
     self.castService:enqueue(self.job)

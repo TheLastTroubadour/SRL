@@ -8,7 +8,8 @@ local State = require 'core.State'
 --
 -- Fires when any group member (including self) drops below the configured
 -- threshold and there are sufficient donors to make equalization worthwhile.
--- Scores 108 — above single heals (105) but below group heal (110).
+-- Scores 112 — above group heal (110) and single heals (105): someone this
+-- critical needs the equalize/cure now, not queued behind a group heal cast.
 
 local ClericDecision = {}
 ClericDecision.__index = ClericDecision
@@ -40,9 +41,10 @@ function ClericDecision:score(ctx)
     local epicName      = self.config:get('Cleric.EpicName')
     local epicThreshold = self.config:get('Cleric.EpicPct') or 35
     if not State.flags.epicDisabled and type(epicName) == 'string' and epicName ~= '' and target.hp <= epicThreshold then
-        if mq.TLO.FindItem('=' .. epicName)() then
+        local item = mq.TLO.FindItem('=' .. epicName)
+        if item() and (item.TimerReady() or 1) == 0 then
             self.pendingAction = { type = 'epic', name = epicName, targetId = target.id }
-            return 108
+            return 112
         end
     end
 
@@ -51,7 +53,7 @@ function ClericDecision:score(ctx)
     if target.hp <= daThreshold then
         if mq.TLO.Me.AltAbilityReady('Divine Arbitration')() then
             self.pendingAction = { type = 'aa' }
-            return 108
+            return 112
         end
     end
 

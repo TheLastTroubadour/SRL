@@ -93,6 +93,14 @@ function CommandRegistry:setup(commandBus, rt, config)
         rt.ccDecision:addImmune(id, name)
     end)
 
+    commandBus:register('HealCall', function(payload)
+        local name = (payload.name or ''):gsub('_', ' ')
+        if name == '' then return end
+        if rt.healDecision then
+            rt.healDecision:activateHealCall(name)
+        end
+    end)
+
     commandBus:register('ReloadConfig', function()
         config:reload()
     end)
@@ -408,6 +416,16 @@ function CommandRegistry:setup(commandBus, rt, config)
     commandBus:register('EpicOff', function()
         State.flags.epicDisabled = true
         print('[SRL] Cleric epic click disabled')
+    end)
+
+    commandBus:register('LootOn', function()
+        State.flags.lootDisabled = false
+        print('[SRL] Auto-loot enabled')
+    end)
+
+    commandBus:register('LootOff', function()
+        State.flags.lootDisabled = true
+        print('[SRL] Auto-loot disabled')
     end)
 
     commandBus:register('GroupHealOn', function()

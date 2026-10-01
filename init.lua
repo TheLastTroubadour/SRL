@@ -387,6 +387,7 @@ local function mainLoop()
     burnService:setCombatService(combatService)
     local cureService = CureService:new(config)
     local cureDecision = CureDecision:new(config)
+    local lootService = require('service.LootService'):new()
     local melodyService = MelodyService:new(config)
     castService:setMelodyService(melodyService)
     local hpBenchService = require('service.HpBenchService'):new()
@@ -399,12 +400,6 @@ local function mainLoop()
     healDecision:setBus(busService)
     healDecision:setCastService(castService)
     local healBenchService = require('service.HealBenchService'):new(healDecision, castService)
-    busService.actor:on('group_heal_cast', function(sender, data)
-        local d = data and data.data
-        if d and d.suppressMs then
-            healDecision:suppressGroupHeal(tonumber(d.suppressMs) or 8000)
-        end
-    end)
     local debuffDecision = DebuffDecision:new(config)
     local abilityDecision = AbilityDecision:new(config)
     burnService:setAbilityDecision(abilityDecision)
@@ -581,6 +576,7 @@ local function mainLoop()
             bufferController:update()
             tradeService:update()
             cureService:update()
+            lootService:update()
             melodyService:tick(ctx)
             burnService:tick()
             hpBenchService:tick(ctx)
@@ -593,6 +589,7 @@ local function mainLoop()
             hp         = ctx.hp,
             mana       = ctx.mana,
             endurance  = ctx.endurance,
+            aggro      = mq.TLO.Me.PctAggro() or 0,
             target     = mq.TLO.Target.CleanName() or '',
             casting    = ctx.casting or '',
             dead       = ctx.dead == true,

@@ -74,6 +74,7 @@ State.flags = {
     curesDisabled         = false,
     epicDisabled          = false,
     groupHealDisabled     = false,
+    lootDisabled          = false,
     commandDebuffTargetId = nil,
     commandDotTargetId    = nil,
     castInFlight          = false,
