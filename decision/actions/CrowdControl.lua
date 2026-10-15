@@ -273,7 +273,7 @@ function CCDecision:findAeMezOpportunity(ctx)
             -- Caster must actually be able to land the AE on this center --
             -- aeRange above is just the blast radius from the center, not the
             -- cast range to reach it.
-            local castRange = tonumber(mq.TLO.Spell(aeResolved).Range()) or 0
+            local castRange = SpellUtil.castRange(aeResolved) or 0
             if castRange > 0 and (centerSpawn.Distance() or 0) > castRange then goto nextCenter end
             if not centerSpawn.LineOfSight() then goto nextCenter end
 
@@ -303,10 +303,14 @@ function CCDecision:findAeMezOpportunity(ctx)
 end
 
 -- Returns all unmezzed, non-immune aggressive add IDs, excluding the assist target and
--- the first MaxTankedMobs mobs (left for tanks to handle).
+-- the first MaxTankedMobs fresh adds (left for tanks to handle). Mobs we already
+-- mezzed whose recast window has arrived always come first and are never skipped --
+-- otherwise, once the other adds die, the lone remaining mezzed mob is the "first"
+-- add and gets left for the tank, letting its mez run to zero.
 function CCDecision:getUnmezzedAdds(ctx)
     local maxTanked = self.maxTankedMobsOverride or self.config:get('CrowdControl.MaxTankedMobs') or 1
     local now = mq.gettime()
+    local expiring = {}
     local allAdds = {}
     local slots = mq.TLO.Me.XTargetSlots()
     for i = 1, slots do
@@ -320,6 +324,8 @@ function CCDecision:getUnmezzedAdds(ctx)
                 local spawnName = mq.TLO.Spawn('id ' .. id).CleanName()
                 if spawnName and self.immuneNames[spawnName:lower()] then
                     self.immune[id] = true  -- cache by id to skip name lookup next tick
+                elseif mezExpired then
+                    table.insert(expiring, id)
                 else
                     table.insert(allAdds, id)
                 end
@@ -327,8 +333,9 @@ function CCDecision:getUnmezzedAdds(ctx)
         end
     end
 
-    -- Leave the first MaxTankedMobs for tanks, mez the rest
-    local result = {}
+    -- Remez expiring mobs first, then leave the first MaxTankedMobs fresh adds
+    -- for tanks and mez the rest
+    local result = expiring
     for i = maxTanked + 1, #allAdds do
         table.insert(result, allAdds[i])
     end
@@ -387,7 +394,7 @@ function CCDecision:findReadySingleSpell(targetId)
                 and (not spell.minLevel or not targetLevel or targetLevel >= spell.minLevel)
             then
                 if spawn and spawn() then
-                    local spellRange = tonumber(mq.TLO.Spell(resolved).Range()) or 0
+                    local spellRange = SpellUtil.castRange(resolved) or 0
                     if spellRange > 0 and (spawn.Distance() or 0) > spellRange then goto continue end
                     if not spawn.LineOfSight() then goto continue end
                 end
@@ -413,8 +420,12 @@ function CCDecision:verifyMezzedTargets()
         local spawn = mq.TLO.Spawn('id ' .. id)
         if not spawn() then goto continue end
         mq.cmdf('/target id %d', id)
-        mq.delay(500, function() return mq.TLO.Target.ID() == id and mq.TLO.Target.BuffsPopulated() == true end)
-        if mq.TLO.Target.ID() == id and not mq.TLO.Target.Mezzed() then
+        mq.delay(1000, function() return mq.TLO.Target.ID() == id and mq.TLO.Target.BuffsPopulated() == true end)
+        -- Only trust Mezzed() once the buff packet has actually arrived --
+        -- unpopulated buffs read as nil, which would wrongly forget a mob
+        -- that's still mezzed and send CC back to re-check/re-mez it.
+        if mq.TLO.Target.ID() == id and mq.TLO.Target.BuffsPopulated()
+                and not mq.TLO.Target.Mezzed() then
             self.mezzed[id] = nil
         end
         ::continue::

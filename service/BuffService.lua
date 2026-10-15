@@ -122,7 +122,7 @@ function BuffService:getSpellRange(spellName, rangeOverride)
     if rangeOverride then return tonumber(rangeOverride) end
     local ae = tonumber(mq.TLO.Spell(spellName).AERange()) or 0
     if ae > 0 then return ae end
-    return tonumber(mq.TLO.Spell(spellName).Range()) or 0
+    return SpellUtil.castRange(spellName) or 0
 end
 
 function BuffService:update(ctx)

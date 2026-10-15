@@ -216,6 +216,7 @@ local SECTIONS = {
             { key = 'threshold', label = 'Threshold', ftype = 'number' },
             { key = 'targeted',  label = 'Targeted',  ftype = 'bool' },
             { key = 'debuff',    label = 'Debuff',    ftype = 'bool' },
+            { key = 'checkBuff', label = 'Check Buff', ftype = 'spell_name' },
         },
         default  = { name = '', type = 'spell', threshold = 3 },
     },

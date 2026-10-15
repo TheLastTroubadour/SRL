@@ -102,12 +102,13 @@ function Context:reloadSet(set)
         minXTarTargets  = self.config:get('Debuff.MinimumAmountToStartDebuffOnXTar') or 2
     }
 
-    local dotsOnAssist  = self.config:get('Dots.DotsOnAssist.' .. set) or {}
-    local dotsOnCommand = self.config:get('Dots.DotsOnCommand.' .. set) or {}
+    -- DotsOnAssist/DotsOnCommand are top-level sections (matches EditorSchema + yamls)
+    local dotsOnAssist  = self.config:get('DotsOnAssist.' .. set) or {}
+    local dotsOnCommand = self.config:get('DotsOnCommand.' .. set) or {}
 
     self.dot = {
-        onAssistSpells  = self:sortByPriority(#dotsOnAssist  > 0 and dotsOnAssist  or (self.config:get('Dots.DotsOnAssist.Main')  or {})),
-        onCommandSpells = self:sortByPriority(#dotsOnCommand > 0 and dotsOnCommand or (self.config:get('Dots.DotsOnCommand.Main') or {})),
+        onAssistSpells  = self:sortByPriority(#dotsOnAssist  > 0 and dotsOnAssist  or (self.config:get('DotsOnAssist.Main')  or {})),
+        onCommandSpells = self:sortByPriority(#dotsOnCommand > 0 and dotsOnCommand or (self.config:get('DotsOnCommand.Main') or {})),
     }
 end
 

@@ -109,7 +109,7 @@ function ShrinkDecision:getRange(entry)
 
     local ae = tonumber(mq.TLO.Spell(spellName).AERange()) or 0
     if ae > 0 then return ae end
-    return tonumber(mq.TLO.Spell(spellName).Range()) or 0
+    return SpellUtil.castRange(spellName) or 0
 end
 
 function ShrinkDecision:isReady(entry)

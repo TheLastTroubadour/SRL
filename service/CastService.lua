@@ -4,6 +4,7 @@ local Logging = require 'core.Write'
 local Target = require 'service.TargetService'
 local State = require 'core.State'
 local StringUtil = require 'util.StringUtil'
+local SpellUtil = require 'util.SpellUtil'
 
 local CastService = {}
 CastService.__index = CastService
@@ -138,12 +139,14 @@ function CastService:startWorker()
                 local spawn = mq.TLO.Spawn('id ' .. job.targetId)
                 if not spawn() then
                     print("Removing from queue spawn not alive")
+                    self.queuedKeys[job.key] = nil
                     table.remove(self.queue, i)
                     goto continue
                 end
 
                 -- Dead target
                 if spawn.Dead() then
+                    self.queuedKeys[job.key] = nil
                     table.remove(self.queue, i)
                     goto continue
                 end
@@ -154,13 +157,14 @@ function CastService:startWorker()
                     if job.range then
                         spellRange = tonumber(job.range)
                     else
-                        local range   = tonumber(mq.TLO.Spell(job.name).Range())   or 0
+                        local range   = SpellUtil.castRange(job.name)   or 0
                         local aeRange = tonumber(mq.TLO.Spell(job.name).AERange()) or 0
                         spellRange = range > 0 and range or aeRange
                     end
                     if spellRange > 0 and spellRange < tonumber(spawn.Distance()) then
                         print(string.format("Removing due to spell distance: %s | target: %s (id: %s) | dist: %.1f | range: %.1f",
                             job.name, job.targetName, job.targetId, tonumber(spawn.Distance()), spellRange))
+                        self.queuedKeys[job.key] = nil
                         table.remove(self.queue, i)
                         goto continue
                     end
@@ -252,7 +256,7 @@ function CastService:startWorker()
                         self.queuedKeys[batchJob.key] = nil
                         goto batchNext
                     end
-                    local range = mq.TLO.Spell(batchJob.name).Range() or 0
+                    local range = SpellUtil.castRange(batchJob.name) or 0
                     local spellRange = tonumber(range) == 0 and (mq.TLO.Spell(batchJob.name).AERange() or 0) or range
                     if tonumber(spellRange) > 0 and (s.Distance() or 0) > tonumber(spellRange) then
                         self.queuedKeys[batchJob.key] = nil
@@ -347,6 +351,19 @@ end
 
 function CastService:isQueued(job)
     return self.queuedKeys[job.key] == true
+end
+
+-- True if a heal job is waiting in the queue or currently being cast. Modules
+-- that /cast directly (Debuff, Dot) check this so they don't jump in front of
+-- a pending heal and leave it to time out in srlCast.
+function CastService:hasPendingHeal()
+    if self.currentlyInFlight and self.currentlyInFlight.type == 'heal' then
+        return true
+    end
+    for _, j in ipairs(self.queue) do
+        if j and j.type == 'heal' then return true end
+    end
+    return false
 end
 
 -- True if this job can fire immediately with no blocking wait -- already
@@ -568,6 +585,10 @@ function CastService:srlCast(job)
     end
     local isSpellReady = mq.TLO.Me.SpellReady(job.name)()
     Logging.Debug(("Is spell ready %s --- %s "):format(job.name, tostring(isSpellReady)))
+    if not isSpellReady and job.type == 'heal' then
+        print(string.format("[SRL] heal dropped: %s on %s (not ready, casting=%s)",
+            job.name, job.targetName or '?', tostring(mq.TLO.Me.Casting() or 'nothing')))
+    end
     if isSpellReady then
         if not job.targetId then
             return "BAD_TARGET_ID"

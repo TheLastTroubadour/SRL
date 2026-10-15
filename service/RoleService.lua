@@ -81,7 +81,7 @@ function RoleService:getRoles()
     end
 
     if DOT_CLASSES[classShortName] then
-        roles.doter = 'doter'
+        roles.dot = 'dot'
     end
 
     if HYBRID_CLASSES[classShortName] then

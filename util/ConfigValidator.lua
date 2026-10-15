@@ -149,7 +149,7 @@ function ConfigValidator.run(config)
     end
 
     -- DoTs (Main sets)
-    for _, section in ipairs({ 'Dots.DotsOnAssist.Main', 'Dots.DotsOnCommand.Main' }) do
+    for _, section in ipairs({ 'DotsOnAssist.Main', 'DotsOnCommand.Main' }) do
         checkList(section, config:get(section), 'spell', 'type')
     end
 

@@ -42,4 +42,17 @@ function SpellUtil.resolveRank(name, spellType)
     return base
 end
 
+-- Cast range for this character: MyRange (base range plus this character's
+-- range-extending focus effects), falling back to the base Range when MyRange
+-- is 0/nil. Returns nil when the spell can't be found, so callers keep their
+-- own `or <default>` fallback.
+function SpellUtil.castRange(name)
+    if not name then return nil end
+    local spell = mq.TLO.Spell(name)
+    if not spell() then return nil end
+    local myRange = tonumber(spell.MyRange()) or 0
+    if myRange > 0 then return myRange end
+    return tonumber(spell.Range())
+end
+
 return SpellUtil

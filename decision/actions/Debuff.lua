@@ -102,6 +102,8 @@ function DebuffDecision:score(ctx)
 
     if ctx.casting then return 0 end
     if not ctx.roles['debuff'] then return 0 end
+    -- Debuff /casts directly, bypassing CastService -- don't cut in front of a pending heal
+    if RunTime and RunTime.castService and RunTime.castService:hasPendingHeal() then return 0 end
     if not ctx.self.debuff then return 0 end
     if ctx.mana < 10 then return 0 end
 

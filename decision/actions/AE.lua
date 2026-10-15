@@ -16,6 +16,9 @@ function AEDecision:new(config)
     self.config       = config
     self.pendingJobs  = {}
     self.recastTimers = {}
+    self.lastCastAt     = {}  -- entry.name -> time the AE last actually landed
+    self.buffVerifiedAt = {}  -- mob id -> time its buffs were last target-checked
+    self.lastBuffVerify = 0
     return self
 end
 
@@ -39,6 +42,72 @@ local function resolveSpellName(entry)
     return resolved
 end
 
+-- How long a target-hop buff check on a mob is trusted (another shaman may slow
+-- it after we looked), and the minimum gap between hop passes.
+local BUFF_VERIFY_TTL_MS      = 15000
+local BUFF_VERIFY_INTERVAL_MS = 2000
+
+-- Counts aggressive XTarget NPCs within radius of (y, x, z) that have none of the
+-- entry's checkBuff buffs. Spawn.Buff reads MQ's cached buffs, which only exist
+-- for spawns this character has targeted -- a mob with no cached data counts as
+-- NOT having the buff, so a fresh pile of untargeted adds still triggers the AE.
+-- Also returns the IDs of counted mobs whose cache can't be trusted yet (never
+-- target-checked, checked before this AE last landed, or checked too long ago).
+function AEDecision:countMissingBuff(entry, radius, y, x, z)
+    local names = type(entry.checkBuff) == 'table' and entry.checkBuff or { entry.checkBuff }
+    local now = mq.gettime()
+    local lastCast = self.lastCastAt[entry.name] or 0
+    local count, unverified = 0, {}
+    for i = 1, (mq.TLO.Me.XTargetSlots() or 0) do
+        local xt = mq.TLO.Me.XTarget(i)
+        if xt() and xt.Type() == 'NPC' and not xt.Dead() and xt.Aggressive() then
+            local id = xt.ID()
+            local spawn = mq.TLO.Spawn('id ' .. id)
+            if spawn() then
+                local dist = math.sqrt((spawn.Y() - y) ^ 2 + (spawn.X() - x) ^ 2 + (spawn.Z() - z) ^ 2)
+                if dist <= radius then
+                    local hasBuff = false
+                    for _, n in ipairs(names) do
+                        if spawn.Buff(n)() then hasBuff = true break end
+                    end
+                    if not hasBuff then
+                        count = count + 1
+                        local checkedAt = self.buffVerifiedAt[id]
+                        if not checkedAt or checkedAt < lastCast or (now - checkedAt) > BUFF_VERIFY_TTL_MS then
+                            table.insert(unverified, id)
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return count, unverified
+end
+
+-- Target-hops each mob so MQ's buff cache refreshes (same approach as CC's
+-- verifyMezzedTargets), then restores the previous target. A mob whose buffs
+-- never populate stays unverified and keeps counting as unslowed.
+function AEDecision:verifyBuffs(ids)
+    local now = mq.gettime()
+    if (now - self.lastBuffVerify) < BUFF_VERIFY_INTERVAL_MS then return false end
+    self.lastBuffVerify = now
+
+    local prevTargetId = mq.TLO.Target.ID()
+    for _, id in ipairs(ids) do
+        if mq.TLO.Spawn('id ' .. id)() then
+            mq.cmdf('/target id %d', id)
+            mq.delay(1000, function() return mq.TLO.Target.ID() == id and mq.TLO.Target.BuffsPopulated() == true end)
+            if mq.TLO.Target.ID() == id and mq.TLO.Target.BuffsPopulated() then
+                self.buffVerifiedAt[id] = mq.gettime()
+            end
+        end
+    end
+    if prevTargetId and prevTargetId ~= 0 and mq.TLO.Target.ID() ~= prevTargetId then
+        Target:getTargetById(prevTargetId)
+    end
+    return true
+end
+
 function AEDecision:score(ctx)
     self.pendingJobs = {}
 
@@ -54,24 +123,38 @@ function AEDecision:score(ctx)
     for _, entry in ipairs(spells) do
         local threshold = entry.threshold or 3
         local mobCount
+        local cy, cx, cz, radius  -- AE center + radius, only needed for checkBuff recounts
 
         local spellName = resolveSpellName(entry)
 
         if entry.targeted then
             if not (ctx.assist and ctx.assist.Id) then goto continue end
-            local maxRange  = entry.maxRange  or tonumber(mq.TLO.Spell(spellName).Range())   or 150
+            local maxRange  = entry.maxRange  or SpellUtil.castRange(spellName)   or 150
             local beamWidth = entry.beamWidth or tonumber(mq.TLO.Spell(spellName).AERange()) or 30
             if (ctx.assist.distance or 999) > maxRange then goto continue end
             local target = mq.TLO.Spawn('id ' .. ctx.assist.Id)
             if not target() then goto continue end
             local y, x, z = target.Y(), target.X(), target.Z()
-            local raw = mq.TLO.SpawnCount(
-                string.format('npc radius %d loc %s %s %s', beamWidth, y, x, z))() or 0
-            mobCount = math.min(raw, 12)
+            if entry.checkBuff then
+                cy, cx, cz, radius = y, x, z, beamWidth
+            else
+                local raw = mq.TLO.SpawnCount(
+                    string.format('npc radius %d loc %s %s %s', beamWidth, y, x, z))() or 0
+                mobCount = math.min(raw, 12)
+            end
         else
-            local radius = tonumber(mq.TLO.Spell(spellName).AERange()) or 0
+            radius = tonumber(mq.TLO.Spell(spellName).AERange()) or 0
             if radius <= 0 then radius = tonumber(mq.TLO.Spell(spellName).Range()) or 50 end
-            mobCount = mq.TLO.SpawnCount(string.format('npc radius %d', radius))() or 0
+            if entry.checkBuff then
+                cy, cx, cz = mq.TLO.Me.Y(), mq.TLO.Me.X(), mq.TLO.Me.Z()
+            else
+                mobCount = mq.TLO.SpawnCount(string.format('npc radius %d', radius))() or 0
+            end
+        end
+
+        local unverified
+        if entry.checkBuff then
+            mobCount, unverified = self:countMissingBuff(entry, radius, cy, cx, cz)
         end
 
         if mobCount < threshold then goto continue end
@@ -81,9 +164,21 @@ function AEDecision:score(ctx)
             goto continue
         end
 
-        if self:isReady(entry) then
-            table.insert(self.pendingJobs, entry)
+        if not self:isReady(entry) then goto continue end
+
+        -- Enough apparently-unslowed mobs and the AE is ready: target-check any
+        -- whose cached buffs can't be trusted, then recount. While casting, wait
+        -- for the cast to finish instead -- don't hop targets or /stopcast a heal
+        -- over mobs that may already be slowed.
+        if unverified and #unverified > 0 then
+            if ctx.casting then goto continue end
+            if self:verifyBuffs(unverified) then
+                mobCount = self:countMissingBuff(entry, radius, cy, cx, cz)
+                if mobCount < threshold then goto continue end
+            end
         end
+
+        table.insert(self.pendingJobs, entry)
 
         ::continue::
     end
@@ -111,7 +206,7 @@ function AEDecision:execute(ctx)
         -- Targeted AE: require assist target within range, face it before casting
         if entry.targeted then
             if not (ctx.assist and ctx.assist.Id) then goto continueExec end
-            local maxRange = entry.maxRange or tonumber(mq.TLO.Spell(resolveSpellName(entry)).Range()) or 150
+            local maxRange = entry.maxRange or SpellUtil.castRange(resolveSpellName(entry)) or 150
             if (ctx.assist.distance or 999) > maxRange then goto continueExec end
             local targetId = tonumber(ctx.assist.Id)
             if mq.TLO.Target.ID() ~= targetId then
@@ -154,6 +249,8 @@ function AEDecision:execute(ctx)
             if not mq.TLO.Me.SpellReady(spellName)() then
                 local recast = (mq.TLO.Spell(spellName).RecastTime.TotalSeconds() or 0) * 1000
                 self.recastTimers[entry.name] = mq.gettime() + math.max(recast, 2000)
+                -- Invalidates earlier buff checks so mobs get re-checked for this cast's debuff
+                self.lastCastAt[entry.name] = mq.gettime()
             end
 
         elseif entry.type == 'disc' then

@@ -58,7 +58,7 @@ function HoTDecision:score(ctx)
     local function canReach(id, spellName)
         local spawn = mq.TLO.Spawn('id ' .. tostring(id))
         if not spawn() then return true end
-        local range = tonumber(mq.TLO.Spell(spellName).Range()) or 200
+        local range = SpellUtil.castRange(spellName) or 200
         return (tonumber(spawn.Distance()) or 0) <= range
     end
 

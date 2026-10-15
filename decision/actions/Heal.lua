@@ -97,7 +97,7 @@ function HealDecision:checkHealCall()
             entry._rspell = SpellUtil.resolveRank(entry.spell, entry.type or 'spell')
         end
         local rspell = entry._rspell or entry.spell
-        local spellRange = tonumber(mq.TLO.Spell(rspell).Range()) or 200
+        local spellRange = SpellUtil.castRange(rspell) or 200
         if dist <= spellRange and mq.TLO.Me.SpellReady(rspell)() then
             return { target = spawn, entry = entry, rspell = rspell }
         end
@@ -273,7 +273,7 @@ function HealDecision:score(ctx)
 
                     local spell         = mq.TLO.Spell(rspell)
                     local spellManaCost = spell.Mana() or 0
-                    local spellRange    = tonumber(spell.Range()) or 200
+                    local spellRange    = SpellUtil.castRange(rspell) or 200
                     local healSpawn     = mq.TLO.Spawn('id ' .. tostring(t.id))
                     local spawnOk       = healSpawn() and not healSpawn.Dead()
                     local dist          = spawnOk and tonumber(healSpawn.Distance()) or nil
@@ -331,7 +331,7 @@ function HealDecision:score(ctx)
                     -- this was always a no-op. t.hp > 0 is the real dead check.
                     if t.hp and t.hp > 0 and t.hp < threshold then
                         local healSpawn = mq.TLO.Spawn('id ' .. tostring(t.id))
-                        local spellRange = tonumber(mq.TLO.Spell(rspell).Range()) or 200
+                        local spellRange = SpellUtil.castRange(rspell) or 200
                         if healSpawn() and not healSpawn.Dead() and (tonumber(healSpawn.Distance()) or 0) <= spellRange then
                             self.job = Job:new(t.id, t.name, rspell, 'heal', 450, topOff.gem)
                             return true
