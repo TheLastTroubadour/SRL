@@ -89,10 +89,72 @@ local function checkList(section, entries, nameField, typeField)
     end
 end
 
+-- Scans the raw YAML text for a key repeated within the same mapping. The YAML
+-- loader doesn't complain about these and the later one silently replaces the
+-- earlier, so e.g. a stray empty `Heals:` at the bottom wipes the real section
+-- above it. Indentation-based, no full parse: a stack of scopes (one per
+-- mapping), where a "- " list item opens a new scope for its own keys.
+-- Returns a list of { key, line, firstLine }.
+function ConfigValidator.findDuplicateKeys(path)
+    local file = io.open(path, 'r')
+    if not file then return {} end
+
+    local dups, scopes, lineNo = {}, {}, 0
+    for line in file:lines() do
+        lineNo = lineNo + 1
+        line = line:gsub('\r$', '')
+        local indent = #line:match('^( *)')
+        local rest = line:sub(indent + 1)
+
+        if rest ~= '' and rest:sub(1, 1) ~= '#' then
+            local isItem = rest:sub(1, 2) == '- '
+            local body = isItem and rest:sub(3) or rest
+
+            local scopeIndent
+            if isItem then
+                while #scopes > 0 and scopes[#scopes].indent >= indent do table.remove(scopes) end
+                scopeIndent = indent + 2
+                table.insert(scopes, { indent = scopeIndent, keys = {} })
+            else
+                while #scopes > 0 and scopes[#scopes].indent > indent do table.remove(scopes) end
+                if #scopes == 0 or scopes[#scopes].indent < indent then
+                    table.insert(scopes, { indent = indent, keys = {} })
+                end
+            end
+
+            local key = body:match('^([%w_%.%-]+):%s') or body:match('^([%w_%.%-]+):$')
+            if key then
+                local scope = scopes[#scopes]
+                if scope.keys[key] then
+                    table.insert(dups, { key = key, line = lineNo, firstLine = scope.keys[key] })
+                else
+                    scope.keys[key] = lineNo
+                end
+            end
+        end
+    end
+    file:close()
+    return dups
+end
+
+local function checkDuplicateKeys(config)
+    if not (config and config.path and config.fileName) then return end
+    local ok, dups = pcall(ConfigValidator.findDuplicateKeys, config.path .. config.fileName)
+    if not ok then return end
+    for _, d in ipairs(dups) do
+        local msg = string.format('duplicate key (line %d, first at line %d) - the later one overrides the earlier, delete one',
+            d.line, d.firstLine)
+        warn('Duplicate key', d.key, msg)
+        print(string.format('[SRL Validate] %s: "%s" - %s', config.fileName, d.key, msg))
+    end
+end
+
 function ConfigValidator.run(config)
     badSet = {}  -- reset for this character's validation pass
     local me = mq.TLO.Me.Name()
     mq.cmdf('/dgt all [SRL Validate] Running config validation for %s...', me)
+
+    checkDuplicateKeys(config)
 
     -- Buffs (spell field, type field)
     for _, section in ipairs({ 'Buffs.SelfBuff', 'Buffs.BotBuff', 'Buffs.CombatBuff', 'Buffs.GroupBuff' }) do
@@ -184,9 +246,14 @@ function ConfigValidator.run(config)
     checkHealRoles('Heals.HoTSpells')
     checkHealRoles('Heals.PromisedSpells')
     local groupSpell = config:get('Heals.GroupSpell')
-    if groupSpell and groupSpell.spell then
-        local ok = checkEntry('Heals.GroupSpell', groupSpell.spell, 'spell')
-        recordIfBad(groupSpell.spell, 'spell', ok)
+    if type(groupSpell) == 'table' then
+        local entries = groupSpell.spell and { groupSpell } or groupSpell
+        for _, entry in ipairs(entries) do
+            if entry.spell then
+                local ok = checkEntry('Heals.GroupSpell', entry.spell, 'spell')
+                recordIfBad(entry.spell, 'spell', ok)
+            end
+        end
     end
 
     -- Cures

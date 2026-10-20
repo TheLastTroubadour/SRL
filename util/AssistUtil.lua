@@ -14,8 +14,9 @@ function AssistUtil.broadcastAssist(targetId, extra)
     local me = mq.TLO.Me.Name()
     local generation = State.assist.generation + 1
     local prefix = BroadcastUtil.prefix(AssistUtil.config)
-    mq.cmdf('%s /srlevent Assist id=%s generation=%s sender=%s%s',
-        prefix, targetId, generation, me, extra or '')
+    -- ts is informational only (shows up in DanNet's "-->" echo); the receiver ignores it
+    mq.cmdf('%s /srlevent Assist id=%s generation=%s sender=%s ts=%s%s',
+        prefix, targetId, generation, me, os.date('%H:%M:%S'), extra or '')
     local name = mq.TLO.Spawn('id ' .. tostring(targetId)).CleanName()
     State:updateAssistState({ id = targetId, name = name, sender = me })
 end

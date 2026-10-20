@@ -11,6 +11,7 @@ local TankAssistDecision = {}
 TankAssistDecision.__index = TankAssistDecision
 
 local REPULSE_MS = 30000 -- re-announce assist on the same target periodically, cheap safety net
+local DEBUG_THROTTLE_MS = 3000 -- min gap between "why didn't I call assist" diagnostics
 
 function TankAssistDecision:new(config)
     local self = setmetatable({}, TankAssistDecision)
@@ -23,7 +24,7 @@ function TankAssistDecision:new(config)
 end
 
 -- Ground-truth check, independent of Pull.lua's own internal state tracking:
--- is this candidate actually near camp with LoS on us? Pull's state can get
+-- is this candidate actually within Pull.CampDragDistance of camp with LoS on us? Pull's state can get
 -- out of sync with reality (aborts back to 'idle' on a mid-cycle safety net
 -- without the mob having gone anywhere -- see the mid-drag abort in Pull.lua),
 -- so gating solely on "Pull thinks it's still working on it" isn't reliable.
@@ -36,13 +37,87 @@ function TankAssistDecision:nearCampWithLoS(spawnId)
     if not spawn() then return false end
     if not spawn.LineOfSight() then return false end
 
-    local returnDist = (self.config and self.config:get('Pull.ReturnDist')) or 15
-    local dist = MoveUtil.pathLengthToLoc(camp.x, camp.y, camp.z)
-    return dist ~= nil and dist <= returnDist
+    -- Measure the mob's distance to camp, not ours -- gating on our own
+    -- position deadlocked when the tank was off camp (nothing walks it home
+    -- while aggressive mobs are up, and assist never got called).
+    local nearDist = (self.config and self.config:get('Pull.CampDragDistance')) or 80
+    local dx, dy, dz = (spawn.X() or 0) - camp.x, (spawn.Y() or 0) - camp.y, (spawn.Z() or 0) - camp.z
+    return math.sqrt(dx * dx + dy * dy + dz * dz) <= nearDist
+end
+
+-- Throttled diagnostic for the silent "returned 0" paths below, so it's
+-- visible why no assist got called while a hostile is targeted/on xtarget.
+function TankAssistDecision:debugSkip(reason, ctx)
+    local now = mq.gettime()
+    if now - (self.lastDebugAt or 0) < DEBUG_THROTTLE_MS then return end
+    self.lastDebugAt = now
+
+    local target = mq.TLO.Target
+    local camp = State.pull.camp
+    local mobToCamp
+    if camp and (target.ID() or 0) ~= 0 then
+        local dx, dy, dz = (target.X() or 0) - camp.x, (target.Y() or 0) - camp.y, (target.Z() or 0) - camp.z
+        mobToCamp = math.sqrt(dx * dx + dy * dy + dz * dz)
+    end
+
+    -- Per-mob view of the aggressive xtargets: this is what the camp+LoS gate
+    -- actually evaluates when nothing usable is targeted.
+    local xtInfo = {}
+    for _, xt in ipairs(ctx.xtargets or {}) do
+        if xt.type == 'NPC' and not xt.dead and xt.aggressive then
+            local sp = mq.TLO.Spawn('id ' .. tostring(xt.id))
+            local d
+            if camp and sp() then
+                local dx, dy, dz = (sp.X() or 0) - camp.x, (sp.Y() or 0) - camp.y, (sp.Z() or 0) - camp.z
+                d = math.sqrt(dx * dx + dy * dy + dz * dz)
+            end
+            table.insert(xtInfo, string.format('%s(id=%s toCamp=%s los=%s)',
+                tostring(xt.name), tostring(xt.id),
+                d and string.format('%.1f', d) or 'nil', tostring(sp() and sp.LineOfSight())))
+        end
+    end
+    print(string.format(
+        '[SRL] TankAssist skip [v2 mob-to-camp gate]: %s | target=%s id=%s aggressive=%s los=%s | camp=%s targetToCamp=%s limit(CampDragDistance)=%s | assist.targetId=%s assist.targetName=%s | xtAggressive=%s [%s]',
+        reason,
+        tostring(target.CleanName()), tostring(target.ID()),
+        tostring(target.Aggressive()), tostring(target.LineOfSight()),
+        camp and 'set' or 'none',
+        mobToCamp and string.format('%.1f', mobToCamp) or 'nil',
+        tostring((self.config and self.config:get('Pull.CampDragDistance')) or 80),
+        tostring(State.assist.targetId), tostring(State.assist.targetName),
+        tostring(ctx.numberOfAggresiveInXTar), table.concat(xtInfo, ', ')))
+end
+
+-- Nearest aggressive NPC on xtarget that failed the camp gate but is still a
+-- reasonable pull: line of sight, within Pull.Radius of camp, and within 200 of
+-- us (a mezzed mob is inside the enchanter's cast range, so it can't be farther
+-- than that). Only called when nothing aggressive is inside the camp radius.
+function TankAssistDecision:findFarAggressive(ctx)
+    local camp = State.pull.camp
+    if not camp then return nil end
+
+    local radius = (self.config and self.config:get('Pull.Radius')) or 100
+    local bestId, bestDist
+    for _, xt in ipairs(ctx.xtargets or {}) do
+        if xt.type == 'NPC' and not xt.dead and xt.aggressive
+                and tostring(xt.id) ~= tostring(State.assist.targetId) then
+            local sp = mq.TLO.Spawn('id ' .. tostring(xt.id))
+            if sp() and sp.LineOfSight() then
+                local dx, dy, dz = (sp.X() or 0) - camp.x, (sp.Y() or 0) - camp.y, (sp.Z() or 0) - camp.z
+                local toCamp = math.sqrt(dx * dx + dy * dy + dz * dz)
+                local toMe = sp.Distance() or math.huge
+                if toCamp <= radius and toMe <= 200 and (not bestDist or toMe < bestDist) then
+                    bestId, bestDist = xt.id, toMe
+                end
+            end
+        end
+    end
+    return bestId
 end
 
 function TankAssistDecision:score(ctx)
     self.pendingId = nil
+    self.localOnly = false
     if State.flags.automode ~= 'tank' and State.flags.automode ~= 'tankpuller' then return 0 end
 
     local target = mq.TLO.Target
@@ -62,8 +137,35 @@ function TankAssistDecision:score(ctx)
         -- and nobody's called assist on it, pick it up directly rather than
         -- just sitting there with a stale/no target waiting for a human to
         -- manually retarget.
+        -- An assist is already live: leave it to AssistDecision to retarget it.
+        -- Otherwise (no live target yet, e.g. stale corpse target) we'd keep
+        -- "claiming" a different xtarget every tick -- A, then B, then A... --
+        -- and flood assist calls while AssistDecision (90 < 93) never gets to run.
+        if State.assist.targetId then
+            local assistSpawn = mq.TLO.Spawn('id ' .. tostring(State.assist.targetId))
+            if assistSpawn() and not assistSpawn.Dead() then return 0 end
+        end
+
         local pick = self:findUnclaimedAggressive(ctx)
-        if not pick then return 0 end
+        if not pick then
+            -- Camp is clear (nothing aggressive inside the camp radius). A far
+            -- aggressive mob -- typically one an enchanter has mezzed -- is what
+            -- a player would go break and pull home. Engage it tank-only: set
+            -- our own assist state without a raid broadcast, so only this
+            -- client's AssistDecision acts. Once it's dragged inside the camp
+            -- radius the normal path above announces it to the raid.
+            local far = self:findFarAggressive(ctx)
+            if far then
+                self.pendingId = far
+                self.localOnly = true
+                return 93
+            end
+            -- Only worth reporting when there's actually a hostile around
+            if (targetId and targetId ~= 0 and target.Type() == 'NPC') or (ctx.numberOfAggresiveInXTar or 0) > 0 then
+                self:debugSkip('no usable target (not aggressive / failed camp+LoS gate) and no unclaimed aggressive xtarget', ctx)
+            end
+            return 0
+        end
         self.pendingId = pick
         return 93
     end
@@ -75,6 +177,7 @@ function TankAssistDecision:score(ctx)
     local sameEngagement = tostring(targetId) == tostring(State.assist.targetId)
         and target.CleanName() == State.assist.targetName
     if sameEngagement and mq.gettime() - self.lastBroadcastAt < REPULSE_MS then
+        self:debugSkip('target already the announced assist (same id+name), within re-pulse window', ctx)
         return 0
     end
 
@@ -98,6 +201,18 @@ end
 
 function TankAssistDecision:execute(ctx)
     if not self.pendingId then return end
+    if self.localOnly then
+        -- Tank-only engage: no raid broadcast. lastBroadcastAt reset so the
+        -- real announcement fires as soon as the mob is back inside camp.
+        State:updateAssistState({
+            id = self.pendingId,
+            name = mq.TLO.Spawn('id ' .. tostring(self.pendingId)).CleanName(),
+            sender = mq.TLO.Me.Name(),
+        })
+        self.lastBroadcastAt = 0
+        print(string.format('[SRL] TankAssist: camp clear, engaging far mob id=%s alone', tostring(self.pendingId)))
+        return
+    end
     AssistUtil.broadcastAssist(self.pendingId)
     self.lastBroadcastAt = mq.gettime()
 end
