@@ -4,6 +4,10 @@ local State = require 'core.State'
 local SpellUtil = require 'util.SpellUtil'
 local ConfigValidator = require 'util.ConfigValidator'
 
+-- How long a claimed debuff burn waits before casting, so peers' competing
+-- claims (sent at the same instant) arrive and the tie-break settles.
+local CLAIM_SETTLE_MS = 750
+
 -- 2.0 first, 1.5 second. 1.0 epics not included. CLR intentionally omitted.
 local CLASS_EPICS = {
     WAR = { "Kreljnok's Sword of Eternal Power",     "Champion's Sword of Eternal Power" },
@@ -69,19 +73,26 @@ function BurnService:activate(sectionKey)
         job.burn = true
 
         if v.debuff and self.abilityDecision and assistTargetId ~= 0 then
-            local expiry = self.abilityDecision:getClaimExpiry(v.name, assistTargetId)
-            local now = mq.gettime()
-            if expiry and now < expiry then
-                -- Another bard claimed it — defer until their application wears off
-                job.notBefore = expiry
-            else
-                -- We're first — claim it and cast immediately
-                local duration = (mq.TLO.Me.AltAbility(v.name).Spell.Duration.TotalSeconds() or 0)
-                if duration > 0 then
-                    local durationMs = (duration + 2) * 1000
-                    self.abilityDecision:addClaim(v.name, assistTargetId, durationMs)
-                    mq.cmdf('/dgae /srlevent ClaimAbility name=%s targetId=%s duration=%s',
-                        (v.name:gsub(' ', '_')), tostring(assistTargetId), tostring(math.floor(durationMs)))
+            local ad = self.abilityDecision
+            -- Someone (us included) already has it on this mob: skip. The
+            -- next burn/ExpMode activation after it expires re-elects one
+            -- bot, so it never stacks from multiple bards.
+            if ad:getClaimOwner(v.name, assistTargetId) then goto continue end
+            -- Don't claim something we can't fire -- that would lock every
+            -- other bard out while ours sits on cooldown.
+            if v.type == 'aa' and not mq.TLO.Me.AltAbilityReady(v.name)() then goto continue end
+
+            local duration = (mq.TLO.Me.AltAbility(v.name).Spell.Duration.TotalSeconds() or 0)
+            if duration > 0 then
+                local durationMs = (duration + 2) * 1000
+                ad:addClaim(v.name, assistTargetId, durationMs, myName)
+                mq.cmdf('/dgae /srlevent ClaimAbility name=%s targetId=%s duration=%s owner=%s',
+                    (v.name:gsub(' ', '_')), tostring(assistTargetId), tostring(math.floor(durationMs)), myName)
+                -- Let competing claims land, then cast only if we still own it.
+                job.notBefore = mq.gettime() + CLAIM_SETTLE_MS
+                local claimName = v.name
+                job.precheck = function()
+                    return ad:getClaimOwner(claimName, assistTargetId) == myName
                 end
             end
         end

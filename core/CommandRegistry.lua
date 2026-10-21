@@ -630,7 +630,7 @@ function CommandRegistry:setup(commandBus, rt, config)
         if not durationMs or durationMs <= 0 then return end
         local name = (payload.name or ''):gsub('_', ' ')
         if name == '' then return end
-        rt.abilityDecision:addClaim(name, targetId, durationMs)
+        rt.abilityDecision:addClaim(name, targetId, durationMs, payload.owner)
     end)
 
     commandBus:register('NeedCure', function(payload)

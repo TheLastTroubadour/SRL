@@ -16,15 +16,35 @@ function AbilityDecision:new(config)
     self.pendingJobs = {}
     self.recastTimers = {}
     self.claimedAbilities = {}  -- name:targetId -> expiry timestamp
+    self.claimOwners      = {}  -- name:targetId -> claiming bot's name
     self.lastDiscTime    = 0
     self.lastAbilityTime = 0
     self.lastItemTime    = 0
     return self
 end
 
-function AbilityDecision:addClaim(name, targetId, durationMs)
+-- Two bots can claim the same ability+target in the same instant (a burn
+-- broadcast reaches every bard at once, before anyone's claim arrives). To
+-- resolve that race identically on every bot, a live claim held by a
+-- different owner is only replaced by an alphabetically lower owner name.
+function AbilityDecision:addClaim(name, targetId, durationMs, owner)
     local k = name .. ':' .. tostring(targetId)
-    self.claimedAbilities[k] = mq.gettime() + durationMs
+    local now = mq.gettime()
+    local existing = self.claimOwners[k]
+    local live = self.claimedAbilities[k] and now < self.claimedAbilities[k]
+    if live and owner and existing and existing ~= owner
+            and owner:lower() > existing:lower() then
+        return
+    end
+    self.claimedAbilities[k] = now + durationMs
+    self.claimOwners[k] = owner
+end
+
+function AbilityDecision:getClaimOwner(name, targetId)
+    local k = name .. ':' .. tostring(targetId)
+    local expiry = self.claimedAbilities[k]
+    if not expiry or mq.gettime() >= expiry then return nil end
+    return self.claimOwners[k]
 end
 
 function AbilityDecision:getClaimExpiry(name, targetId)
@@ -38,7 +58,10 @@ function AbilityDecision:score(ctx)
     -- Expire stale claims
     local now = mq.gettime()
     for k, expiry in pairs(self.claimedAbilities) do
-        if now >= expiry then self.claimedAbilities[k] = nil end
+        if now >= expiry then
+            self.claimedAbilities[k] = nil
+            self.claimOwners[k] = nil
+        end
     end
 
     local isBard = ctx.myClass == 'BRD'
@@ -123,9 +146,11 @@ function AbilityDecision:execute(ctx)
             if duration and duration > 0 then
                 local durationMs = (duration + 2) * 1000
                 local claimKey = job.name .. ':' .. tostring(job.targetId)
+                local me = mq.TLO.Me.Name()
                 self.claimedAbilities[claimKey] = now + durationMs
-                mq.cmdf('/dgae /srlevent ClaimAbility name=%s targetId=%s duration=%s',
-                    (job.name:gsub(' ', '_')), tostring(job.targetId), tostring(math.floor(durationMs)))
+                self.claimOwners[claimKey] = me
+                mq.cmdf('/dgae /srlevent ClaimAbility name=%s targetId=%s duration=%s owner=%s',
+                    (job.name:gsub(' ', '_')), tostring(job.targetId), tostring(math.floor(durationMs)), me)
             end
         end
         ::continueExec::
