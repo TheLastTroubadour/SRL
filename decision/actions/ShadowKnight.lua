@@ -4,8 +4,9 @@ local SpellUtil = require 'util.SpellUtil'
 
 -- Self-heal lifetap for SHD, matching the old KissAssist Heals|Tap behavior:
 -- cast on self whenever own HP drops below ShadowKnight.LifeTapThreshold.
--- Routed through CastService (like Heal/Buff jobs) rather than cast directly,
--- since the spell may need to be memmed into its gem on demand.
+-- Cast directly (CastService:castNow, non-blocking); score() already requires
+-- the spell memmed and ready, so nothing needs to memorize on demand.
+local RETRY_MS = 1000
 local LifeTapDecision = {}
 LifeTapDecision.__index = LifeTapDecision
 
@@ -15,6 +16,7 @@ function LifeTapDecision:new(config)
     self.config      = config
     self.castService = nil
     self.job         = nil
+    self.retryAt     = 0
     return self
 end
 
@@ -33,8 +35,8 @@ function LifeTapDecision:score(ctx)
     if not spellName or spellName == '' then return 0 end
     spellName = SpellUtil.resolveRank(spellName, 'spell')
 
-    -- Needs a gem to memorize into on demand -- unlike a plain nuke, we can't
-    -- just skip casting if it happens not to already be memmed somewhere.
+    -- LifeTapGem must be configured (castNow casts from the memmed gem and
+    -- never memorizes; the SpellReady check below implies it's memmed).
     local gem = self.config:get('ShadowKnight.LifeTapGem')
     if not gem then return 0 end
 
@@ -43,8 +45,9 @@ function LifeTapDecision:score(ctx)
 
     if mq.TLO.Me.SpellReady(spellName)() ~= true then return 0 end
 
+    if mq.gettime() < self.retryAt then return 0 end
+
     local job = Job:new(mq.TLO.Me.ID(), mq.TLO.Me.Name(), spellName, "heal", 450, gem)
-    if self.castService:isQueued(job) then return 0 end
 
     self.job = job
     return 88
@@ -52,7 +55,8 @@ end
 
 function LifeTapDecision:execute(ctx)
     if not self.job then return end
-    self.castService:enqueue(self.job)
+    self.castService:castNow(self.job)
+    self.retryAt = mq.gettime() + RETRY_MS
 end
 
 return LifeTapDecision

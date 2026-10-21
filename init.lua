@@ -135,6 +135,9 @@ local function DrawDebugWindow()
         local castService = RunTime.castService
         local buffService = RunTime.buffService
         if castService then
+            local inf = castService.currentlyInFlight
+            ImGui.Text("In flight: " .. (inf and string.format("%s (%s) -> %s",
+                tostring(inf.name), tostring(inf.type), tostring(inf.targetName or inf.targetId)) or "none"))
             ImGui.Text("Buff Queue: " .. #castService.queue)
             ImGui.BeginChild("QueueList", 0, 100, true)
             if #castService.queue == 0 then
@@ -203,7 +206,7 @@ local function DrawDebugWindow()
         ImGui.Separator()
 
         -- Heal Decision
-        ImGui.Text("Heal Decision")
+        ImGui.Text(string.format("Heal Decision  [%s]", os.date('%H:%M:%S')))
         local healDecision = RunTime.healDecision
         if healDecision and healDecision.job then
             ImGui.Text(string.format("Pending: %s → %s", tostring(healDecision.job.targetId), healDecision.job.name))

@@ -62,6 +62,13 @@ end
 -- ===== Spell Set =====
 State.spellSet = 'Main'
 
+-- ===== Direct-cast guard =====
+-- gettime() until which we treat ourselves as casting even though
+-- Me.Casting() hasn't caught up yet. A /cast takes a moment to show up in
+-- Me.Casting(); without this, the very next tick sees "not casting" and some
+-- other module retargets (redirecting the cast) or /casts over it.
+State.castGuardUntil = 0
+
 -- ===== Local Toggles =====
 State.flags = {
     paused                = false,

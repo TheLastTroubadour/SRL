@@ -135,6 +135,7 @@ function Context:build(state)
     ctx.endurance = mq.TLO.Me.PctEndurance()
     ctx.moving = mq.TLO.Me.Moving()
     ctx.casting  = mq.TLO.Me.Casting()
+        or (mq.gettime() < (State.castGuardUntil or 0) and 'pending')
     ctx.sitting  = mq.TLO.Me.Sitting()
     ctx.stunned  = mq.TLO.Me.Stunned()
     ctx.silenced = mq.TLO.Me.Silenced()
@@ -266,6 +267,20 @@ function Context:build(state)
 
             local seen = {}
 
+            -- Live HP for friendly XTarget entries, keyed by name. Spawn HP is
+            -- only trustworthy while the client has a live hook on that spawn,
+            -- and an XTarget slot is one -- so when a raid/DanNet peer is also
+            -- on XTarget, this beats their self-reported (broadcast-lagged) HP.
+            local xtLiveHp = {}
+            for i = 1, (mq.TLO.Me.XTargetSlots() or 0) do
+                local xt = mq.TLO.Me.XTarget(i)
+                if xt() and not xt.Dead() and xt.Type() ~= 'NPC' and not xt.Aggressive() then
+                    local xtName = xt.CleanName()
+                    local xtHp   = xt.PctHPs()
+                    if xtName and xtHp then xtLiveHp[xtName] = xtHp end
+                end
+            end
+
             -- Always include self as a heal target
             local myName = mq.TLO.Me.Name()
             seen[myName] = true
@@ -320,7 +335,7 @@ function Context:build(state)
                         -- 100%). Only the bus-broadcast, self-reported HP is trustworthy -- if
                         -- this raid member isn't a known SRL peer reporting one, skip them
                         -- entirely rather than heal off a number that might just be wrong.
-                        local hp = self:getPeerHp(name)
+                        local hp = xtLiveHp[name] or self:getPeerHp(name)
                         if spawn() and not spawn.Dead() and hp then
                             seen[name] = true
                             local role = self:getHealerRole(name)
@@ -351,28 +366,35 @@ function Context:build(state)
             if self.danNetHpService then
                 for _, name in ipairs(self.danNetHpService:getPeerNames()) do
                     if name and not seen[name] then
-                        local hp = self:getPeerHp(name)
-                        if hp then
-                            local spawn = mq.TLO.Spawn(name)
-                            if spawn() and not spawn.Dead() then
-                                -- DanNet peer names aren't guaranteed to match display
-                                -- casing (Me.Name()/CleanName()) -- re-derive the real
-                                -- name from the resolved spawn so seen[]/getHealerRole
-                                -- compare correctly against self and the properly-cased
-                                -- Heals.Tanks/ImportantBots entries.
-                                local canonicalName = spawn.CleanName() or name
-                                if not seen[canonicalName] then
-                                    seen[canonicalName] = true
-                                    local role = self:getHealerRole(canonicalName)
-                                    table.insert(ctx.self.heal.group.memberStatus, {
-                                        id      = spawn.ID(),
-                                        name    = canonicalName,
-                                        hp      = hp,
-                                        role    = role,
-                                        inGroup = false,
-                                        tanking = role == 'tank' and self:isPeerTanking(canonicalName) or false,
-                                    })
-                                end
+                        -- Exact PC match: a bare Spawn(name) is a partial match and
+                        -- can resolve to the peer's corpse or pet instead.
+                        local spawn = mq.TLO.Spawn('pc =' .. name)
+                        if spawn() and not spawn.Dead() then
+                            -- DanNet peer names aren't guaranteed to match display
+                            -- casing (Me.Name()/CleanName()) -- re-derive the real
+                            -- name from the resolved spawn so seen[]/getHealerRole
+                            -- compare correctly against self and the properly-cased
+                            -- Heals.Tanks/ImportantBots entries. HP must be looked
+                            -- up by the real name too: StatusService keys peers by
+                            -- Me.Name(), so a lowercase DanNet name always missed it
+                            -- and fell through to the (stale-prone) DanNet observer.
+                            local canonicalName = spawn.CleanName() or name
+                            -- Lowercase DanNet name kept as a fallback for the
+                            -- observer read in case DanNet lookups are case-sensitive.
+                            local hp = xtLiveHp[canonicalName]
+                                or self:getPeerHp(canonicalName)
+                                or self:getPeerHp(name)
+                            if hp and not seen[canonicalName] then
+                                seen[canonicalName] = true
+                                local role = self:getHealerRole(canonicalName)
+                                table.insert(ctx.self.heal.group.memberStatus, {
+                                    id      = spawn.ID(),
+                                    name    = canonicalName,
+                                    hp      = hp,
+                                    role    = role,
+                                    inGroup = false,
+                                    tanking = role == 'tank' and self:isPeerTanking(canonicalName) or false,
+                                })
                             end
                         end
                     end

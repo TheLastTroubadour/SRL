@@ -163,7 +163,7 @@ function HealBenchService:worstMember(targets)
 end
 
 function HealBenchService:debugPrint(fmt, ...)
-    print('[SRL] healbench DEBUG: ' .. string.format(fmt, ...))
+    print(string.format('[SRL] [%s] healbench DEBUG: ', os.date('%H:%M:%S')) .. string.format(fmt, ...))
 end
 
 function HealBenchService:tick(ctx)

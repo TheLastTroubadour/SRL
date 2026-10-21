@@ -27,6 +27,11 @@ function HealDecision:new(config)
     self.healCooldownThreshold = {}
     self.hpHistory = {}
     self.healCall = nil
+    self.lastCast = nil          -- { name, targetId, isGroup } of the last heal we /cast
+    self.backoffUntil = 0        -- brief pause after a cast attempt that didn't go out
+    self.pendingInterrupt = false
+    self.emergencyTargetId = nil -- critical target we interrupted a heal for
+    self.emergencyUntil = 0
 
     return self
 end
@@ -45,6 +50,17 @@ end
 -- healer decides independently; if the group still needs it, it fires again.
 local GROUP_HEAL_SETTLE_MS = 1500
 
+-- Emergency interrupt: while one of our own single-target heals is in flight,
+-- someone else dropping to this HP% gets the cast /interrupted so the next
+-- tick can heal them instead. Cooldown stops chain-interrupting when several
+-- people are critical at once. (Lived in CastService's blocking cast-wait
+-- before heals cast directly; lastInterruptAt stays on castService since
+-- HealBenchService reads it from there.)
+local EMERGENCY_HP_THRESHOLD = 20
+local INTERRUPT_COOLDOWN_MS  = 2000
+local EMERGENCY_PRIORITY_MS  = 3000 -- how long the interrupted-for target jumps the tier cascade
+local CAST_FAIL_BACKOFF_MS   = 500
+
 -- /srl healcall <name> (or current target if omitted): raid-leader-invoked
 -- emergency burst heal, clerics only (gated here, not in the command handler,
 -- since the broadcast reaches every healer role). For this window, spam
@@ -57,7 +73,7 @@ function HealDecision:activateHealCall(targetName)
 
     local spawn = mq.TLO.Spawn('pc =' .. targetName)
     if not spawn() then
-        print(string.format('[SRL] heal-call: %s not found in zone', targetName))
+        print(string.format('[SRL] [%s] heal-call: %s not found in zone', os.date('%H:%M:%S'), targetName))
         return
     end
 
@@ -66,8 +82,8 @@ function HealDecision:activateHealCall(targetName)
         targetId   = spawn.ID(),
         expiresAt  = mq.gettime() + HEAL_CALL_DURATION_MS,
     }
-    print(string.format('[SRL] %s: heal-call on %s (%ds)',
-        mq.TLO.Me.Name(), targetName, HEAL_CALL_DURATION_MS / 1000))
+    print(string.format('[SRL] [%s] %s: heal-call on %s (%ds)',
+        os.date('%H:%M:%S'), mq.TLO.Me.Name(), targetName, HEAL_CALL_DURATION_MS / 1000))
 end
 
 -- Returns { target = <spawn>, entry = <CallHeal config entry>, rspell = <resolved name> }
@@ -149,13 +165,51 @@ function HealDecision:getProjectedHp(t, lookaheadMs)
     return projected < 0 and 0 or projected
 end
 
+-- True if one of our own single-target heals is mid-cast and someone else
+-- within its range has gone critical. Records who, so the cascade heals them
+-- first once the interrupt lands.
+function HealDecision:checkEmergencyInterrupt(targets)
+    local cast = self.lastCast
+    if not cast or cast.isGroup or not self.castService then return false end
+    if mq.TLO.Me.Casting() ~= cast.name then return false end
+    if mq.gettime() - (self.castService.lastInterruptAt or 0) < INTERRUPT_COOLDOWN_MS then
+        return false
+    end
+
+    local range = SpellUtil.castRange(cast.name) or 200
+    for _, t in ipairs(targets or {}) do
+        if t.id ~= cast.targetId and t.hp and t.hp > 0 and t.hp <= EMERGENCY_HP_THRESHOLD then
+            local spawn = mq.TLO.Spawn('id ' .. tostring(t.id))
+            if spawn() and not spawn.Dead() and (tonumber(spawn.Distance()) or 999) <= range then
+                self.emergencyTargetId = t.id
+                return true
+            end
+        end
+    end
+    return false
+end
+
 function HealDecision:score(ctx)
     self.job = nil
     self.groupHealPending = false
+    self.pendingInterrupt = false
 
     if not ctx.roles[HEALER_ROLE] then return 0 end
 
     local targets = ctx.self.heal.group.memberStatus
+
+    -- Heals /cast directly, so never start one mid-cast (it would re-/cast
+    -- over itself every tick). Only exception: our own heal is in flight and
+    -- someone else just went critical -- interrupt it.
+    if ctx.casting then
+        if self:checkEmergencyInterrupt(targets) then
+            self.pendingInterrupt = true
+            return 125
+        end
+        return 0
+    end
+
+    if mq.gettime() < self.backoffUntil then return 0 end
 
     if self:checkGroupHeal(targets) then
         self.groupHealPending = true
@@ -187,11 +241,22 @@ function HealDecision:score(ctx)
     local DEFAULT_LOOKAHEAD_MS = 2000 -- rough guess until a candidate heal's real cast time is known
     local TIERS = { 'tank', 'important', 'normal' }
 
-    for _, tier in ipairs(TIERS) do
+    -- Someone we just interrupted a heal for goes ahead of every tier, or
+    -- the strict cascade would hand the freed-up cast straight back to the tank.
+    local emergencyId = (self.emergencyTargetId and now < self.emergencyUntil) and self.emergencyTargetId or nil
+    local tierFilters = {}
+    if emergencyId then
+        table.insert(tierFilters, function(t) return t.id == emergencyId end)
+    end
+    for _, role in ipairs(TIERS) do
+        table.insert(tierFilters, function(t) return t.role == role end)
+    end
+
+    for _, inTier in ipairs(tierFilters) do
         local bestTarget, bestHeal, bestScore = nil, nil, 0
 
         for _, t in ipairs(targets) do
-            if t.role ~= tier or not t.hp then goto continue end
+            if not inTier(t) or not t.hp then goto continue end
 
             -- 0% HP means dead, not "needs a heal desperately" -- without this
             -- a dead target scores the maximum possible urgency (100 - 0 = 100)
@@ -209,7 +274,8 @@ function HealDecision:score(ctx)
                 projectedHp = self:getProjectedHp(t, DEFAULT_LOOKAHEAD_MS)
             end
 
-            if t.role ~= 'tank' and self.healCooldown[t.id] and now < self.healCooldown[t.id] then
+            if t.role ~= 'tank' and t.id ~= emergencyId
+                    and self.healCooldown[t.id] and now < self.healCooldown[t.id] then
                 -- Still cooling down from a previously queued heal -- only bypass
                 -- if they've worsened enough since then to need a MORE urgent
                 -- tier (lower threshold) than what's already queued, so a stale/
@@ -304,6 +370,7 @@ function HealDecision:score(ctx)
             )
             self.job.targetRole = bestTarget.role
             self.job.healThreshold = bestHeal.threshold
+            self.job.targetHp = bestTarget.hp
             return 105
         end
     end
@@ -334,6 +401,7 @@ function HealDecision:score(ctx)
                         local spellRange = SpellUtil.castRange(rspell) or 200
                         if healSpawn() and not healSpawn.Dead() and (tonumber(healSpawn.Distance()) or 0) <= spellRange then
                             self.job = Job:new(t.id, t.name, rspell, 'heal', 450, topOff.gem)
+                            self.job.targetHp = t.hp
                             return true
                         end
                     end
@@ -355,26 +423,59 @@ function HealDecision:score(ctx)
 end
 
 function HealDecision:execute(ctx)
-    if not self.job then return end
     if not self.castService then return end
-    if self.castService:isQueued(self.job) then return end
 
-    -- Set cooldown immediately to prevent re-queueing same target every tick
-    if self.job.targetRole ~= 'tank' then
-        local castMs = (mq.TLO.Spell(self.job.name).CastTime.TotalSeconds() or 0) * 1000
-        self.healCooldown[self.job.targetId] = mq.gettime() + castMs + 2000
-        self.healCooldownThreshold[self.job.targetId] = self.job.healThreshold
+    if self.pendingInterrupt then
+        mq.cmd('/interrupt')
+        self.castService.lastInterruptAt = mq.gettime()
+        self.emergencyUntil = mq.gettime() + EMERGENCY_PRIORITY_MS
+        return
+    end
+
+    local job = self.job
+    if not job then return end
+
+    -- Direct, non-blocking cast -- the main loop keeps running, and score()
+    -- won't pick another heal until this one finishes (ctx.casting gate).
+    local result = self.castService:castNow(job)
+    local now = mq.gettime()
+    if result ~= 'CAST' then
+        -- Didn't go out (target lost, silenced, OOM, ...): back off briefly so
+        -- a heal that can't fire doesn't win every tick and starve everything else.
+        self.backoffUntil = now + CAST_FAIL_BACKOFF_MS
+        return
+    end
+
+    self.lastCast = { name = job.name, targetId = job.targetId, isGroup = self.groupHealPending }
+    if job.targetId == self.emergencyTargetId then
+        self.emergencyTargetId = nil
+    end
+
+    local castMs = (mq.TLO.Spell(job.name).CastTime.TotalSeconds() or 0) * 1000
+
+    -- Cooldown so a non-tank isn't healed again before this one has landed
+    if job.targetRole ~= 'tank' then
+        self.healCooldown[job.targetId] = now + castMs + 2000
+        self.healCooldownThreshold[job.targetId] = job.healThreshold
     end
 
     if self.groupHealPending then
         -- Local settle only -- do not touch other healers' state. Other clerics
         -- are typically in other groups anyway and should be free to group heal
         -- their own group whenever it needs it.
-        local castMs = (mq.TLO.Spell(self.job.name).CastTime.TotalSeconds() or 0) * 1000
-        self.groupHealLock = mq.gettime() + castMs + GROUP_HEAL_SETTLE_MS
+        self.groupHealLock = now + castMs + GROUP_HEAL_SETTLE_MS
     end
+end
 
-    self.castService:enqueue(self.job)
+-- Heals.GroupSpell is either a single entry (legacy) or a list of entries.
+-- Each entry is its own trigger with its own threshold / minInjured, so the
+-- same spell can appear more than once as tiers (e.g. 90% with 4 injured,
+-- 76% with 3) and different group heals can coexist. First entry (in list
+-- order) whose condition is met and whose spell is usable wins.
+local function groupSpellEntries(cfg)
+    if type(cfg) ~= 'table' then return {} end
+    if cfg.spell then return { cfg } end
+    return cfg
 end
 
 function HealDecision:checkGroupHeal(targets)
@@ -385,70 +486,99 @@ function HealDecision:checkGroupHeal(targets)
         return false
     end
 
-    local groupSpell   = self.config:get("Heals.GroupSpell")
-    local threshold    = (groupSpell and groupSpell.threshold) or self.config:get("Heals.GroupThreshold")    or 65
-    local minInjured   = (groupSpell and groupSpell.minInjured) or self.config:get("Heals.GroupHealMinInjured") or 4
-    local minInjuredWithTank = (groupSpell and groupSpell.minInjuredWithTank) or math.max(1, minInjured - 1)
+    local entries = groupSpellEntries(self.config:get("Heals.GroupSpell"))
+    if #entries == 0 then return false end
+
+    local defaultThreshold  = self.config:get("Heals.GroupThreshold") or 65
+    local defaultMinInjured = self.config:get("Heals.GroupHealMinInjured") or 4
     local groupOnlyCfg = self.config:get("Heals.GroupHealGroupOnly")
     local groupOnly    = groupOnlyCfg == nil or groupOnlyCfg == true
-
-    if not (groupSpell and groupSpell.spell) then return false end
 
     local tanks        = TableUtil.toList(self.config:get("Heals.Tanks"))
     local tankSet      = {}
     for _, n in ipairs(tanks) do tankSet[n] = true end
 
-    local aeRange        = mq.TLO.Spell(groupSpell.spell).AERange() or 100
-    local injuredInRange = 0
-    local tankInjured    = false
-
+    -- Snapshot candidates once: { hp, dist, isTank }; each entry then counts
+    -- against its own threshold and AE range.
+    local members = {}
     if groupOnly then
         -- Only count EQ group members + self as injured
-        if (mq.TLO.Me.PctHPs() or 100) <= threshold then
-            injuredInRange = injuredInRange + 1
-        end
+        table.insert(members, { hp = mq.TLO.Me.PctHPs() or 100, dist = 0, isTank = false })
         local gCount = mq.TLO.Group.Members() or 0
         for i = 1, gCount do
             local m = mq.TLO.Group.Member(i)
             if m() and not m.Dead() then
-                local hp   = m.PctHPs()
-                local dist = m.Distance() or 999
+                local hp = m.PctHPs()
                 -- 0 HP means dead, not injured -- same direct HP backstop as
                 -- the tier-cascade loop above.
-                if hp and hp > 0 and hp <= threshold and dist <= aeRange then
-                    injuredInRange = injuredInRange + 1
-                    if tankSet[m.CleanName()] then tankInjured = true end
+                if hp and hp > 0 then
+                    table.insert(members, {
+                        hp = hp,
+                        dist = m.Distance() or 999,
+                        isTank = tankSet[m.CleanName()] == true,
+                    })
                 end
             end
         end
     else
         for _, t in ipairs(targets) do
-            if t.hp and t.hp > 0 and t.hp <= threshold then
+            if t.hp and t.hp > 0 then
                 local spawn = mq.TLO.Spawn('id ' .. tostring(t.id))
-                if spawn() and (spawn.Distance() or 999) <= aeRange then
-                    injuredInRange = injuredInRange + 1
-                    if tankSet[t.name] then tankInjured = true end
+                if spawn() then
+                    table.insert(members, {
+                        hp = t.hp,
+                        dist = spawn.Distance() or 999,
+                        isTank = tankSet[t.name] == true,
+                    })
                 end
             end
         end
     end
 
-    local required = tankInjured and minInjuredWithTank or minInjured
-    if injuredInRange >= required then
-        if not groupSpell._rspell then
-            groupSpell._rspell = SpellUtil.resolveRank(groupSpell.spell, 'spell')
+    for _, entry in ipairs(entries) do
+        if entry.spell then
+            if not entry._rspell then
+                entry._rspell = SpellUtil.resolveRank(entry.spell, 'spell')
+            end
+            local rspell = entry._rspell or entry.spell
+
+            -- Cast directly (never memorizes), so it must be memmed, off
+            -- recast and affordable right now -- otherwise fall through to the
+            -- next entry so a second group heal can cover while this recycles.
+            local usable = mq.TLO.Me.SpellReady(rspell)()
+                and (mq.TLO.Spell(rspell).Mana() or 0) <= (mq.TLO.Me.CurrentMana() or 0)
+
+            if usable then
+                local threshold  = entry.threshold or defaultThreshold
+                local minInjured = entry.minInjured or defaultMinInjured
+                local minInjuredWithTank = entry.minInjuredWithTank or math.max(1, minInjured - 1)
+                local aeRange    = mq.TLO.Spell(rspell).AERange() or 100
+
+                local injured, tankInjured = 0, false
+                for _, m in ipairs(members) do
+                    if m.hp <= threshold and m.dist <= aeRange then
+                        injured = injured + 1
+                        if m.isTank then tankInjured = true end
+                    end
+                end
+
+                local required = tankInjured and minInjuredWithTank or minInjured
+                if injured >= required then
+                    self.job = Job:new(
+                            mq.TLO.Me.ID(),
+                            mq.TLO.Me.Name(),
+                            rspell,
+                            "heal",
+                            480,
+                            entry.gem
+                    )
+                    return true
+                end
+            end
         end
-        self.job = Job:new(
-                mq.TLO.Me.ID(),
-                mq.TLO.Me.Name(),
-                groupSpell._rspell or groupSpell.spell,
-                "heal",
-                480,
-                groupSpell.gem
-        )
-        return true
     end
 
+    return false
 end
 
 function HealDecision:selectHealSpell(target, healSpells, hpOverride)

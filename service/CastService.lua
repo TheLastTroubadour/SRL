@@ -20,6 +20,10 @@ CastService.__index = CastService
 local EMERGENCY_HP_THRESHOLD = 20
 local INTERRUPT_COOLDOWN_MS  = 2000
 
+-- After castNow sends a /cast, how long to treat ourselves as casting until
+-- Me.Casting() reflects it (see State.castGuardUntil).
+local CAST_GUARD_MS = 500
+
 function CastService:new(scheduler, combatService)
     local self = setmetatable({}, CastService)
 
@@ -187,6 +191,11 @@ function CastService:startWorker()
 
             if #self.queue == 0 then
                 mq.delay(50)
+            elseif mq.TLO.Me.Class.ShortName() ~= 'BRD'
+                    and (mq.TLO.Me.Casting() or mq.gettime() < (State.castGuardUntil or 0)) then
+                -- A direct cast (heals, etc.) is in flight or was just sent --
+                -- don't retarget or /cast over it; pick the queue back up after.
+                mq.delay(25)
             else
                 if #self.queue > 1 then
                     table.sort(self.queue, function(a, b)
@@ -259,6 +268,13 @@ function CastService:startWorker()
                     local range = SpellUtil.castRange(batchJob.name) or 0
                     local spellRange = tonumber(range) == 0 and (mq.TLO.Spell(batchJob.name).AERange() or 0) or range
                     if tonumber(spellRange) > 0 and (s.Distance() or 0) > tonumber(spellRange) then
+                        self.queuedKeys[batchJob.key] = nil
+                        goto batchNext
+                    end
+
+                    -- Job-supplied last-moment gate (e.g. a debuff claim lost
+                    -- to another bard while this job waited in the queue).
+                    if batchJob.precheck and not batchJob.precheck() then
                         self.queuedKeys[batchJob.key] = nil
                         goto batchNext
                     end
@@ -594,24 +610,13 @@ function CastService:srlCast(job)
             return "BAD_TARGET_ID"
         end
 
-        -- Only a spell whose own TargetType is "Self" is guaranteed to land on the
-        -- caster regardless of current target -- a "buff on myself" job whose spell
-        -- is actually Single-target still needs the caster targeted, or it lands on
-        -- whatever's currently selected (e.g. the assist mob) instead of self.
-        local isTrueSelfSpell = job.targetId == mq.TLO.Me.ID()
-                and mq.TLO.Spell(job.name).TargetType() == 'Self'
-        if not isTrueSelfSpell and mq.TLO.Target.ID() ~= job.targetId then
-            Target:getTargetById(job.targetId)
-        end
-        mq.cmd("/stick off")
-        mq.cmd('/nav stop')
+        self:targetForCast(job, mq.TLO.Spell(job.name).TargetType())
+        self:stopMovement()
         local gem = mq.TLO.Me.Gem(job.name)() or job.gem
         if not gem then return end
         local castTime = mq.TLO.Spell(job.name).CastTime.TotalSeconds() * 1000 + 1500
 
-        if job.type == 'heal' then
-            mq.cmdf('/dga all /echo [SRL] %s healing %s with %s', mq.TLO.Me.Name(), job.targetName or '?', job.name)
-        end
+        self:announce(job)
 
         self.lastGemCastAt[tonumber(gem)] = mq.gettime()
         mq.cmdf('/cast %s', gem)
@@ -640,6 +645,138 @@ function CastService:srlCast(job)
         end
     end
     Logging.Debug("Cast Util Export SRL Cast End")
+end
+
+----------------------------------------------------------------------------
+-- Shared cast steps (used by both srlCast and castNow)
+----------------------------------------------------------------------------
+
+-- Targets job.targetId unless the spell is guaranteed to land on the caster.
+-- Only a TargetType of "Self" is that guarantee -- a "buff on myself" job whose
+-- spell is actually Single-target still needs the caster targeted, or it lands
+-- on whatever's currently selected (e.g. the assist mob) instead of self.
+-- Returns false if the target couldn't be acquired.
+function CastService:targetForCast(job, targetType)
+    if not job.targetId then return true end
+    local isTrueSelfSpell = job.targetId == mq.TLO.Me.ID() and targetType == 'Self'
+    if isTrueSelfSpell then return true end
+    if mq.TLO.Target.ID() ~= job.targetId then
+        Target:getTargetById(job.targetId)
+    end
+    return mq.TLO.Target.ID() == job.targetId
+end
+
+-- Stops stick/nav before a cast. /nav stop only when nav is active, so casters
+-- don't spam "[Nav] No navigation path currently active" on every cast.
+function CastService:stopMovement()
+    mq.cmd('/stick off')
+    if mq.TLO.Navigation.Active() then mq.cmd('/nav stop') end
+end
+
+-- Raid-wide echo for heals so other boxes / the player can see who healed whom.
+function CastService:announce(job)
+    if job.type == 'heal' then
+        -- HP the heal decision acted on (live XTarget / peer-reported / group);
+        -- fall back to the target window, which is live once we're on them.
+        local hp = job.targetHp
+        if not hp and mq.TLO.Target.ID() == job.targetId then hp = mq.TLO.Target.PctHPs() end
+        local hpText = hp and string.format(' (%d%%)', math.floor(tonumber(hp) or 0)) or ''
+        mq.cmdf('/dga all /echo [SRL] [%s] %s healing %s%s with %s', os.date('%H:%M:%S'),
+            mq.TLO.Me.Name(), job.targetName or '?', hpText, job.name)
+    end
+end
+
+----------------------------------------------------------------------------
+-- castNow: non-blocking direct cast
+----------------------------------------------------------------------------
+
+-- Job types that cast from a spell gem.
+local GEM_TYPES = { spell = true, heal = true, buff = true, nuke = true, dot = true, debuff = true }
+
+-- Fires job immediately and returns -- never mq.delay()s on mem, readiness or
+-- cast duration, so the main loop (and every other decision) keeps running.
+-- Callers decide what to cast and retry on later ticks; this only checks the
+-- job can go out right now, then sends it.
+--
+-- job: a Job (model/Job.lua) or any table with name, type, targetId, targetName,
+-- and optional gem. For gem spells, pass the rank-resolved name (SpellUtil.resolveRank)
+-- -- the spell must already be memmed; castNow never memorizes (MemSwap's job).
+-- Range and line-of-sight are the caller's call (they vary by module).
+--
+-- Returns 'CAST' when the command was sent, otherwise a reason string:
+-- 'BAD_JOB', 'CASTING', 'SILENCED', 'NO_TARGET', 'NOT_MEMMED', 'NOT_READY',
+-- 'NO_MANA', 'NO_ITEM', 'UNKNOWN_TYPE'.
+function CastService:castNow(job)
+    if not job or not job.name then return 'BAD_JOB' end
+    local jobType = job.type or 'spell'
+    local isBard = mq.TLO.Me.Class.ShortName() == 'BRD'
+
+    -- Bards are always "casting" a song; everyone else can't start a new cast
+    -- mid-cast. Discs and abilities fire fine during a spell cast.
+    if not isBard and mq.TLO.Me.Casting() and jobType ~= 'disc' and jobType ~= 'ability' then
+        return 'CASTING'
+    end
+
+    if job.targetId then
+        local spawn = mq.TLO.Spawn('id ' .. tostring(job.targetId))
+        if not spawn() or spawn.Dead() then return 'NO_TARGET' end
+    end
+
+    if GEM_TYPES[jobType] then
+        if mq.TLO.Me.Silenced() then return 'SILENCED' end
+        local gem = mq.TLO.Me.Gem(job.name)()
+        if not gem then return 'NOT_MEMMED' end
+        if not mq.TLO.Me.SpellReady(job.name)() then return 'NOT_READY' end
+        local manaCost = mq.TLO.Spell(job.name).Mana() or 0
+        if manaCost > (mq.TLO.Me.CurrentMana() or 0) then return 'NO_MANA' end
+
+        if not self:targetForCast(job, mq.TLO.Spell(job.name).TargetType()) then return 'NO_TARGET' end
+        self:stopMovement()
+        self:announce(job)
+        self.lastGemCastAt[tonumber(gem)] = mq.gettime()
+        mq.cmdf('/cast %s', gem)
+        if not isBard and (mq.TLO.Spell(job.name).CastTime.TotalSeconds() or 0) > 0 then
+            State.castGuardUntil = mq.gettime() + CAST_GUARD_MS
+        end
+        return 'CAST'
+
+    elseif jobType == 'aa' then
+        if mq.TLO.Me.Silenced() then return 'SILENCED' end
+        if not mq.TLO.Me.AltAbilityReady(job.name)() then return 'NOT_READY' end
+        local aaSpell = mq.TLO.Me.AltAbility(job.name).Spell
+        if not self:targetForCast(job, aaSpell.TargetType()) then return 'NO_TARGET' end
+        if (aaSpell.CastTime() or 0) > 0 then self:stopMovement() end
+        self:announce(job)
+        mq.cmdf('/alt activate "%s"', job.name)
+        if not isBard and (aaSpell.CastTime() or 0) > 0 then
+            State.castGuardUntil = mq.gettime() + CAST_GUARD_MS
+        end
+        return 'CAST'
+
+    elseif jobType == 'item' then
+        local item = mq.TLO.FindItem('=' .. job.name)
+        if not item() then return 'NO_ITEM' end
+        if (item.TimerReady() or 1) ~= 0 then return 'NOT_READY' end
+        if not self:targetForCast(job, item.Clicky.Spell.TargetType()) then return 'NO_TARGET' end
+        if (item.Clicky.CastTime() or 0) > 0 then self:stopMovement() end
+        self:announce(job)
+        mq.cmdf('/useitem "%s"', job.name)
+        return 'CAST'
+
+    elseif jobType == 'disc' then
+        if not mq.TLO.Me.CombatAbilityReady(job.name)() then return 'NOT_READY' end
+        if not self:targetForCast(job, mq.TLO.Spell(job.name).TargetType()) then return 'NO_TARGET' end
+        mq.cmdf('/disc %s', job.name)
+        return 'CAST'
+
+    elseif jobType == 'ability' then
+        if not mq.TLO.Me.AbilityReady(job.name)() then return 'NOT_READY' end
+        if not self:targetForCast(job, nil) then return 'NO_TARGET' end
+        mq.cmdf('/doability %s', job.name)
+        return 'CAST'
+    end
+
+    return 'UNKNOWN_TYPE'
 end
 
 function CastService:clearCombatQueue()

@@ -423,7 +423,7 @@ A default file is generated on first run. Key sections:
 | `Jolts.JoltThreshold` | Aggro % to start using jolts (default 80) |
 | `Jolts.LockoutThreshold` | Aggro % to stop nuking entirely (default 100) |
 | `Heals.GroupThreshold` | Average group HP% to trigger a group heal |
-| `Heals.GroupSpell` | Group heal spell and gem |
+| `Heals.GroupSpell` | Group heal entry or list of entries, each with its own `threshold`/`minInjured`/`minInjuredWithTank`; first matching entry wins |
 | `Heals.CallHeal` | Spell(s) clerics spam via `/srl healcall`, tried in order |
 | `Cleric.EpicPct` | Tank HP% to click the cleric epic (default 35) |
 | `Cleric.EpicName` | Name of the cleric epic item |
@@ -519,11 +519,17 @@ Heals:
     - MyTank1
   ImportantBots:
     - MyHealer1
-  GroupThreshold: 65             # cast group heal when avg HP% falls below this
-  GroupSpell:
-    spell: Word of Restoration Rk. III
-    gem: 7
-    minInjured: 4              # optional: minimum members below threshold before group heal fires (default 4)
+  GroupThreshold: 65             # default threshold for GroupSpell entries without their own
+  GroupSpell:                    # a single entry, or a list -- first entry whose condition is met wins
+    - spell: Word of Restoration Rk. III
+      gem: 7
+      threshold: 90              # optional: per-entry HP% (overrides GroupThreshold)
+      minInjured: 4              # optional: members at/below threshold before it fires (default 4)
+    - spell: Word of Restoration Rk. III
+      gem: 7
+      threshold: 75
+      minInjured: 3
+      minInjuredWithTank: 2      # optional: lower bar when a tank is injured (default minInjured - 1)
   Spells:
     tank:
       - spell: My Big Heal Rk. III

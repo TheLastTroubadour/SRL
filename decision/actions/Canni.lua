@@ -88,7 +88,7 @@ function CanniDecision:execute(ctx)
         end
     else
         if self.castService then
-            self.castService:enqueue(self.job)
+            self.castService:castNow(self.job)
         else
             -- fallback if castService not injected
             local gem = self.job.gem
